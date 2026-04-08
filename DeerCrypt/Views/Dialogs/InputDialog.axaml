@@ -1,0 +1,41 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:DeerCrypt.ViewModels.Dialogs"
+        x:Class="DeerCrypt.Views.Dialogs.InputDialog"
+        x:DataType="vm:InputDialogViewModel"
+        Background="{DynamicResource MainBackgroundBrush}"
+        Title="{Binding Title}"
+        Width="360"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+
+    <StackPanel Margin="24" Spacing="14">
+
+        <TextBlock Text="{Binding Prompt}"
+                   FontSize="14" />
+
+        <TextBox Text="{Binding Value}"
+                 Watermark="{Binding Placeholder}"
+                 x:Name="InputBox" />
+
+        <TextBlock Text="{Binding ErrorMessage}"
+                   Foreground="#E05252"
+                   FontSize="12"
+                   IsVisible="{Binding ErrorMessage,
+                       Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                   TextWrapping="Wrap" />
+
+        <StackPanel Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,6,0,0">
+            <Button Content="Cancel" Click="OnCancelClicked" />
+            <Button Content="{Binding ConfirmText}"
+                    Command="{Binding ConfirmCommand}"
+                    Classes="accent"
+                    IsDefault="True" />
+        </StackPanel>
+
+    </StackPanel>
+</Window>

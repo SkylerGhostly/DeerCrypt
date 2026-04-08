@@ -1,0 +1,41 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:DeerCrypt.ViewModels.Dialogs"
+        x:Class="DeerCrypt.Views.Dialogs.AddFolderConfirmDialog"
+        x:DataType="vm:AddFolderConfirmViewModel"
+        Background="{DynamicResource MainBackgroundBrush}"
+        Title="Add Folder"
+        Width="400"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+
+    <StackPanel Margin="24" Spacing="14">
+
+        <TextBlock Text="{Binding SummaryText}"
+                   FontSize="16"
+                   FontWeight="SemiBold"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,4" />
+
+        <TextBlock Text="{Binding DetailText}"
+                   Opacity="0.7"
+                   FontSize="13" />
+
+        <TextBlock Text="Folders with the same name will be merged."
+                   Opacity="0.45"
+                   FontSize="12" />
+
+        <StackPanel Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,6,0,0">
+            <Button Content="Cancel" Click="OnCancelClicked" />
+            <Button Content="Add Folder"
+                    Classes="accent"
+                    Click="OnConfirmClicked"
+                    IsDefault="True" />
+        </StackPanel>
+
+    </StackPanel>
+</Window>

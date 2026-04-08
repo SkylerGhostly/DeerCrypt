@@ -1,0 +1,237 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:DeerCrypt.ViewModels.Dialogs"
+        x:Class="DeerCrypt.Views.Dialogs.CreateVaultDialog"
+        x:DataType="vm:CreateVaultViewModel"
+        Background="{DynamicResource MainBackgroundBrush}"
+        Title="Create New Vault"
+        Width="460"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+
+    <StackPanel>
+
+        <!-- Header -->
+        <StackPanel Margin="28,24,28,18" Spacing="4" HorizontalAlignment="Center">
+            <TextBlock Text="🔐"
+                       FontSize="36"
+                       HorizontalAlignment="Center" />
+            <TextBlock Text="Create New Vault"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center"
+                       Margin="0,4,0,0" />
+            <TextBlock Text="Choose a location and set a strong password."
+                       FontSize="12"
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       Opacity="0.45"
+                       MaxWidth="320" />
+        </StackPanel>
+
+        <!-- Separator -->
+        <Rectangle Height="1" Fill="#18808080" />
+
+        <!-- Body -->
+        <StackPanel Margin="28,20,28,24" Spacing="4">
+
+            <!-- Vault Location -->
+            <TextBlock Text="VAULT LOCATION"
+                       FontSize="10"
+                       FontWeight="SemiBold"
+                       Opacity="0.45"
+                       LetterSpacing="1"
+                       Margin="0,0,0,6" />
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBox Grid.Column="0"
+                         Watermark="Choose where to save..."
+                         Text="{Binding VaultPath}"
+                         IsReadOnly="True"
+                         Margin="0,0,8,0" />
+                <Button Grid.Column="1"
+                        Content="Browse…"
+                        Command="{Binding BrowseCommand}"
+                        Padding="12,6" />
+            </Grid>
+
+            <!-- Password -->
+            <TextBlock Text="PASSWORD"
+                       FontSize="10"
+                       FontWeight="SemiBold"
+                       Opacity="0.45"
+                       LetterSpacing="1"
+                       Margin="0,14,0,6" />
+
+            <!-- Password field with show/hide -->
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBox Grid.Column="0"
+                         Watermark="Password"
+                         PasswordChar="●"
+                         Text="{Binding Password}"
+                         IsVisible="{Binding !ShowPassword}"
+                         Margin="0,0,8,0" />
+                <TextBox Grid.Column="0"
+                         Watermark="Password"
+                         Text="{Binding Password}"
+                         IsVisible="{Binding ShowPassword}"
+                         Margin="0,0,8,0" />
+                <ToggleButton Grid.Column="1"
+                              IsChecked="{Binding ShowPassword}"
+                              Content="👁"
+                              Width="36"
+                              Height="32"
+                              Padding="0"
+                              FontSize="15"
+                              HorizontalContentAlignment="Center"
+                              VerticalContentAlignment="Center"
+                              ToolTip.Tip="Show / hide password" />
+            </Grid>
+
+            <!-- Confirm password field -->
+            <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+                <TextBox Grid.Column="0"
+                         Watermark="Confirm password"
+                         PasswordChar="●"
+                         Text="{Binding ConfirmPassword}"
+                         IsVisible="{Binding !ShowPassword}"
+                         Margin="0,0,8,0" />
+                <TextBox Grid.Column="0"
+                         Watermark="Confirm password"
+                         Text="{Binding ConfirmPassword}"
+                         IsVisible="{Binding ShowPassword}"
+                         Margin="0,0,8,0" />
+                <ToggleButton Grid.Column="1"
+                              IsChecked="{Binding ShowPassword}"
+                              Content="👁"
+                              Width="36"
+                              Height="32"
+                              Padding="0"
+                              FontSize="15"
+                              HorizontalContentAlignment="Center"
+                              VerticalContentAlignment="Center" />
+            </Grid>
+
+            <!-- Match indicator -->
+            <TextBlock Text="{Binding PasswordMatchText}"
+                       Foreground="{Binding PasswordMatchBrush}"
+                       FontSize="11"
+                       Margin="0,4,0,0"
+                       IsVisible="{Binding ConfirmNotEmpty}" />
+
+            <!-- Strength bar -->
+            <ProgressBar Value="{Binding PasswordStrengthPercent}"
+                         Maximum="100"
+                         Foreground="{Binding PasswordStrengthBrush}"
+                         Margin="0,10,0,0" />
+
+            <!-- Strength label + requirements -->
+            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                <StackPanel Grid.Column="0" Spacing="3">
+
+                    <Grid ColumnDefinitions="16,*">
+                        <TextBlock Grid.Column="0"
+                                   Text="✓"
+                                   Foreground="#4CAF50"
+                                   FontSize="11"
+                                   IsVisible="{Binding PasswordHasLength}" />
+                        <TextBlock Grid.Column="0"
+                                   Text="–"
+                                   FontSize="11"
+                                   Opacity="0.35"
+                                   IsVisible="{Binding !PasswordHasLength}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="At least 8 characters"
+                                   FontSize="11"
+                                   Opacity="0.7" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="16,*">
+                        <TextBlock Grid.Column="0"
+                                   Text="✓"
+                                   Foreground="#4CAF50"
+                                   FontSize="11"
+                                   IsVisible="{Binding PasswordHasUpper}" />
+                        <TextBlock Grid.Column="0"
+                                   Text="–"
+                                   FontSize="11"
+                                   Opacity="0.35"
+                                   IsVisible="{Binding !PasswordHasUpper}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="Uppercase letter (A–Z)"
+                                   FontSize="11"
+                                   Opacity="0.7" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="16,*">
+                        <TextBlock Grid.Column="0"
+                                   Text="✓"
+                                   Foreground="#4CAF50"
+                                   FontSize="11"
+                                   IsVisible="{Binding PasswordHasDigit}" />
+                        <TextBlock Grid.Column="0"
+                                   Text="–"
+                                   FontSize="11"
+                                   Opacity="0.35"
+                                   IsVisible="{Binding !PasswordHasDigit}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="Number (0–9)"
+                                   FontSize="11"
+                                   Opacity="0.7" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="16,*">
+                        <TextBlock Grid.Column="0"
+                                   Text="✓"
+                                   Foreground="#4CAF50"
+                                   FontSize="11"
+                                   IsVisible="{Binding PasswordHasSpecial}" />
+                        <TextBlock Grid.Column="0"
+                                   Text="–"
+                                   FontSize="11"
+                                   Opacity="0.35"
+                                   IsVisible="{Binding !PasswordHasSpecial}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="Special character (!@#…)"
+                                   FontSize="11"
+                                   Opacity="0.7" />
+                    </Grid>
+
+                </StackPanel>
+
+                <TextBlock Grid.Column="1"
+                           Text="{Binding PasswordStrengthLabel}"
+                           FontSize="11"
+                           FontWeight="SemiBold"
+                           Foreground="{Binding PasswordStrengthBrush}"
+                           VerticalAlignment="Top"
+                           Margin="12,2,0,0" />
+            </Grid>
+
+            <!-- Error message -->
+            <TextBlock Text="{Binding ErrorMessage}"
+                       Foreground="#E05252"
+                       FontSize="12"
+                       Margin="0,8,0,0"
+                       IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       TextWrapping="Wrap" />
+
+            <!-- Buttons -->
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Spacing="8"
+                        Margin="0,16,0,0">
+                <Button Content="Cancel"
+                        Click="OnCancelClicked"
+                        Padding="14,6" />
+                <Button Content="Create Vault"
+                        Command="{Binding CreateCommand}"
+                        Classes="accent"
+                        IsDefault="True"
+                        Padding="14,6" />
+            </StackPanel>
+
+        </StackPanel>
+    </StackPanel>
+</Window>

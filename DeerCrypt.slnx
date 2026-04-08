@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="DeerCrypt/DeerCrypt.csproj" Id="e0f44559-09ab-4c99-90dc-392d7c73876f" />
+  <Project Path="DeerCryptLib.Tests/DeerCryptLib.Tests.csproj" Id="ad13598d-22db-4373-b204-70fd21cc25b0" />
+  <Project Path="DeerCryptLib/DeerCryptLib.csproj" />
+</Solution>

@@ -1,0 +1,75 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+	<GCDynamicAdaptationMode>true</GCDynamicAdaptationMode>
+	<ServerGarbageCollection>false</ServerGarbageCollection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.11" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.11" />
+    <PackageReference Include="Avalonia.Labs.Gif" Version="11.3.1" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.11" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.11" />
+    <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.11">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.1" />
+    <PackageReference Include="LibVLCSharp" Version="3.9.0" />
+    <PackageReference Include="TagLibSharp" Version="2.3.0" />
+    <PackageReference Include="LibVLCSharp.Avalonia" Version="3.9.0" />
+    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.21"
+                      Condition="$(RuntimeIdentifier.StartsWith('win')) or '$(RuntimeIdentifier)' == ''" />
+    <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.4.1" />
+    <PackageReference Include="AvaloniaEdit.TextMate" Version="11.4.1" />
+    <PackageReference Include="TextMateSharp.Grammars" Version="2.0.3" />
+    <PackageReference Include="Markdig" Version="1.1.2" />
+    <PackageReference Include="OneWare.Markdown.Avalonia.Tight" Version="11.3.11.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DeerCryptLib\DeerCryptLib.csproj" />
+  </ItemGroup>
+
+  <!--
+    Strip unused LibVLC content from the publish output.
+    The app uses StreamMediaInput (imem), so no network/disc access plugins are needed.
+    All removed items are output-side or hardware-specific and irrelevant to local playback.
+  -->
+	<Target Name="TrimLibVlcPublish" AfterTargets="Publish"
+	        Condition="$(RuntimeIdentifier.StartsWith('win'))">
+		<PropertyGroup>
+			<!-- Identifies the 'other' architecture to remove it entirely -->
+			<OtherArch Condition="'$(RuntimeIdentifier)' == 'win-x64'">win-x86</OtherArch>
+			<OtherArch Condition="'$(RuntimeIdentifier)' == 'win-x86'">win-x64</OtherArch>
+		</PropertyGroup>
+
+		<Message Text="Trimming unused LibVLC content for $(RuntimeIdentifier) in: $(PublishDir)" Importance="high" />
+
+		<!-- 1. Remove the entire directory of the architecture NOT being targeted -->
+		<RemoveDir Condition="'$(OtherArch)' != ''" Directories="$(PublishDir)libvlc\$(OtherArch)" />
+
+		<!-- 2. Trim specific folders within the ACTIVE architecture -->
+		<RemoveDir Directories="$(PublishDir)libvlc\$(RuntimeIdentifier)\hrtfs" />
+		<RemoveDir Directories="$(PublishDir)libvlc\$(RuntimeIdentifier)\lua" />
+		<RemoveDir Directories="$(PublishDir)libvlc\$(RuntimeIdentifier)\plugins\access_output" />
+		<RemoveDir Directories="$(PublishDir)libvlc\$(RuntimeIdentifier)\plugins\stream_out" />
+		<RemoveDir Directories="$(PublishDir)libvlc\$(RuntimeIdentifier)\plugins\mux" />
+		<RemoveDir Directories="$(PublishDir)libvlc\$(RuntimeIdentifier)\plugins\services_discovery" />
+		<RemoveDir Directories="$(PublishDir)libvlc\$(RuntimeIdentifier)\plugins\visualization" />
+		<RemoveDir Directories="$(PublishDir)libvlc\$(RuntimeIdentifier)\plugins\video_splitter" />
+		<RemoveDir Directories="$(PublishDir)libvlc\$(RuntimeIdentifier)\plugins\logger" />
+		<RemoveDir Directories="$(PublishDir)libvlc\$(RuntimeIdentifier)\plugins\keystore" />
+
+		<!-- 3. Delete specific files within the ACTIVE architecture -->
+		<Delete Files="$(PublishDir)libvlc\$(RuntimeIdentifier)\libvlc.lib;$(PublishDir)libvlc\$(RuntimeIdentifier)\libvlccore.lib" />
+	</Target>
+
+</Project>

@@ -1,0 +1,59 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:converters="using:DeerCrypt.Converters"
+             x:Class="DeerCrypt.App"
+             RequestedThemeVariant="Default">
+
+    <Application.Styles>
+        <FluentTheme>
+            <!--
+            <FluentTheme.Palettes>
+                <ColorPaletteResources x:Key="Dark" Accent="#5B9BD5" />
+            
+                <ColorPaletteResources x:Key="Light" Accent="#5B9BD5" />
+            </FluentTheme.Palettes>
+            -->
+        </FluentTheme>
+        <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
+        <Style Selector="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI, Segoe UI Emoji, Arial, sans-serif" />
+        </Style>
+
+        <!-- Progress bar -->
+        <Style Selector="ProgressBar">
+            <Setter Property="Height" Value="6" />
+            <Setter Property="CornerRadius" Value="3" />
+        </Style>
+
+        <!-- File list items: remove default padding so column headers can align -->
+        <Style Selector="ListBoxItem">
+            <Setter Property="Padding" Value="0" />
+        </Style>
+
+        <!-- Column header sort buttons -->
+        <Style Selector="Button.columnHeader">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Opacity" Value="0.45" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,5" />
+        </Style>
+
+        <Style Selector="Menu.Seperator">
+		    <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}"/>	
+        </Style>
+
+    </Application.Styles>
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <converters:VaultItemIconConverter x:Key="VaultItemIconConverter" />
+            <converters:FileSizeConverter x:Key="FileSizeConverter" />
+            <converters:BoolToHighlightConverter x:Key="BoolToHighlightConverter" />
+            <!-- Neutral divider that works in both dark and light themes -->
+            <SolidColorBrush x:Key="SeparatorBrush" Color="#424242" />
+            <SolidColorBrush x:Key="MainBackgroundBrush">#1C1C1C</SolidColorBrush>
+        </ResourceDictionary>
+    </Application.Resources>
+
+</Application>

@@ -1,0 +1,38 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:DeerCrypt.ViewModels.Dialogs"
+        x:Class="DeerCrypt.Views.Dialogs.ProgressDialog"
+        x:DataType="vm:ProgressDialogViewModel"
+        Background="{DynamicResource MainBackgroundBrush}"
+        Title="{Binding Title}"
+        Width="420"
+        SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+
+    <StackPanel Margin="24" Spacing="14">
+
+        <TextBlock Text="{Binding CurrentFileName}"
+                   TextTrimming="CharacterEllipsis"
+                   FontSize="13" />
+
+        <ProgressBar Minimum="0"
+                     Maximum="1"
+                     IsIndeterminate="{Binding IsIndeterminate}"
+                     Value="{Binding Progress}" />
+
+        <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Grid.Column="0"
+                       Text="{Binding StatusText}"
+                       Opacity="0.6"
+                       FontSize="12"
+                       VerticalAlignment="Center" />
+            <Button Grid.Column="1"
+                    Content="Cancel"
+                    Click="OnCancelClicked"
+                    IsVisible="{Binding CanCancel}" />
+        </Grid>
+
+    </StackPanel>
+</Window>

@@ -1,0 +1,96 @@
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:DeerCrypt.ViewModels"
+        xmlns:vmD="using:DeerCrypt.ViewModels.Dialogs"
+        xmlns:converters="using:DeerCrypt.Converters"
+        x:Class="DeerCrypt.Views.Dialogs.MoveDialog"
+        x:DataType="vmD:MoveDialogViewModel"
+        Background="{DynamicResource MainBackgroundBrush}"
+        Title="Move Items"
+        Width="460"
+        Height="460"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+
+        <!-- Breadcrumb -->
+        <Border Grid.Row="0"
+                BorderBrush="{DynamicResource SeparatorBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="6,4">
+            <ItemsControl ItemsSource="{Binding Breadcrumb}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:BreadcrumbSegment">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="{Binding Name}"
+                                    Command="{Binding $parent[Window].DataContext.NavigateToBreadcrumbCommand}"
+                                    CommandParameter="{Binding}"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Padding="4,2" />
+                            <TextBlock Text="/"
+                                       VerticalAlignment="Center"
+                                       Margin="2,0"
+                                       Opacity="0.35" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Border>
+
+        <!-- Back / Up button -->
+        <Border Grid.Row="1"
+                BorderBrush="{DynamicResource SeparatorBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="4,3">
+            <Button Content="← Up"
+                    Command="{Binding NavigateToParentCommand}"
+                    Padding="10,3" />
+        </Border>
+
+        <!-- Directory listing - double-click wired in code-behind -->
+        <ListBox Grid.Row="2"
+                 x:Name="DirList"
+                 ItemsSource="{Binding CurrentDirs}">
+            <ListBox.DataTemplates>
+                <DataTemplate x:DataType="vm:VaultItemViewModel">
+                    <Grid ColumnDefinitions="26,*"
+                          Margin="6,4"
+                          Opacity="{Binding IsDisabled,
+                              Converter={x:Static converters:BoolToOpacityConverter.Instance}}">
+                        <TextBlock Grid.Column="0"
+                                   Text="📁"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding DisplayName}"
+                                   VerticalAlignment="Center" />
+                    </Grid>
+                </DataTemplate>
+            </ListBox.DataTemplates>
+        </ListBox>
+
+        <!-- Footer -->
+        <Border Grid.Row="3"
+                BorderBrush="{DynamicResource SeparatorBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="8,6">
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Spacing="8">
+                <Button Content="Cancel"
+                        Click="OnCancelClicked" />
+                <Button Content="Move Here"
+                        Command="{Binding ConfirmCommand}"
+                        Classes="accent"
+                        IsDefault="True" />
+            </StackPanel>
+        </Border>
+
+    </Grid>
+</Window>

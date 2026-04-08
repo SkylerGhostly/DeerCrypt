@@ -1,0 +1,166 @@
+﻿    <Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:DeerCrypt.ViewModels.Dialogs"
+        xmlns:vlc="using:LibVLCSharp.Avalonia"
+        x:Class="DeerCrypt.Views.Dialogs.MediaPlayerWindow"
+        x:DataType="vm:MediaPlayerViewModel"
+        Title="{Binding Title}"
+        Background="{DynamicResource MainBackgroundBrush}"
+        RequestedThemeVariant="Dark"
+        Width="860" Height="540"
+        MinWidth="480" MinHeight="300">
+
+    <Window.Styles>
+
+        <!-- Flat icon-style buttons for the control bar -->
+        <Style Selector="Button.player">
+            <Setter Property="Background"            Value="Transparent" />
+            <Setter Property="BorderThickness"       Value="0" />
+            <Setter Property="Padding"               Value="6,4" />
+            <Setter Property="VerticalContentAlignment"   Value="Center" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="Foreground"            Value="#E0E0E0" />
+            <Setter Property="FontSize"              Value="16" />
+            <Setter Property="CornerRadius"          Value="4" />
+        </Style>
+        <Style Selector="Button.player:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#28FFFFFF" />
+        </Style>
+        <Style Selector="Button.player:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="#40FFFFFF" />
+        </Style>
+
+        <!-- Repeat toggle - highlights in accent blue when active -->
+        <Style Selector="ToggleButton.player">
+            <Setter Property="Background"            Value="Transparent" />
+            <Setter Property="BorderThickness"       Value="0" />
+            <Setter Property="Padding"               Value="6,4" />
+            <Setter Property="VerticalContentAlignment"   Value="Center" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="FontSize"              Value="16" />
+            <Setter Property="CornerRadius"          Value="4" />
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="*,Auto">
+
+        <!--  Video / Audio rendering area  -->
+        <Grid Grid.Row="0" Background="Black">
+            <!--
+                VideoView owns a native Win32 HWND that always renders above
+                Avalonia's compositor.  Hide it for audio-only files so the
+                album-art panel beneath is not covered by a black native surface.
+            -->
+            <vlc:VideoView x:Name="VideoView"
+                           IsVisible="{Binding !IsAudioOnly}" />
+
+            <!--
+                Audio-only placeholder - visible once IsAudioOnly becomes true.
+                Shows album art when available, otherwise a faint music note.
+            -->
+            <Panel IsVisible="{Binding IsAudioOnly}">
+
+                <!-- Album art (shown once AlbumArt is populated) -->
+                <Image Source="{Binding AlbumArt}"
+                       IsVisible="{Binding AlbumArt, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Stretch="Uniform"
+                       Margin="24" />
+
+                <!-- Fallback music note (shown when there is no album art) -->
+                <TextBlock Text="🎵"
+                           IsVisible="{Binding AlbumArt, Converter={x:Static ObjectConverters.IsNull}}"
+                           FontSize="56"
+                           VerticalAlignment="Center"
+                           HorizontalAlignment="Center"
+                           Opacity="0.30" />
+
+            </Panel>
+        </Grid>
+
+        <!--  Control bar  -->
+        <Border Grid.Row="1"
+                Background="#1A1A1A"
+                BorderBrush="#2C2C2C"
+                BorderThickness="0,1,0,0"
+                Padding="10,5,10,7">
+
+            <StackPanel Spacing="3">
+
+                <!-- Seek bar row: [current time] [slider] [total time] -->
+                <Grid ColumnDefinitions="48,*,48">
+
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding CurrentTimeText}"
+                               Foreground="#999999"
+                               FontSize="11"
+                               FontFamily="Consolas,monospace"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Left" />
+
+                    <Slider Grid.Column="1"
+                            x:Name="SeekSlider"
+                            Classes="seek"
+                            Minimum="0" Maximum="1"
+                            Value="{Binding SeekPosition, Mode=OneWay}"
+                            VerticalAlignment="Center"
+                            ToolTip.Tip="Seek" />
+
+                    <TextBlock Grid.Column="2"
+                               Text="{Binding TotalTimeText}"
+                               Foreground="#999999"
+                               FontSize="11"
+                               FontFamily="Consolas,monospace"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Right" />
+
+                </Grid>
+
+                <!-- Controls row: [▶/⏸]  [spacer]  [↻] [🔊 ═══] -->
+                <Grid ColumnDefinitions="Auto,*,Auto"
+                      VerticalAlignment="Center">
+
+                    <!-- Play / Pause -->
+                    <Button Grid.Column="0"
+                            Classes="player"
+                            Command="{Binding PlayPauseCommand}"
+                            Width="36" Height="28"
+                            Content="{Binding PlayPauseGlyph}"
+                            FontSize="16"
+                            ToolTip.Tip="Play / Pause (Space)" />
+
+                    <!-- Repeat + volume -->
+                    <StackPanel Grid.Column="2"
+                                Orientation="Horizontal"
+                                Spacing="2"
+                                VerticalAlignment="Center">
+
+                        <ToggleButton Classes="player"
+                                      IsChecked="{Binding IsRepeat}"
+                                      Width="28" Height="26"
+                                      Content="↻"
+                                      ToolTip.Tip="Repeat" />
+
+                        <TextBlock Text="🔊"
+                                   FontSize="13"
+                                   Foreground="#999999"
+                                   VerticalAlignment="Center"
+                                   Margin="6,0,2,0" />
+
+                        <Slider x:Name="VolumeSlider"
+                                Classes="volume"
+                                Width="80"
+                                Minimum="0" Maximum="150"
+                                Value="{Binding Volume}"
+                                VerticalAlignment="Center"
+                                ToolTip.Tip="Volume (scroll to adjust)" />
+
+                    </StackPanel>
+
+                </Grid>
+
+            </StackPanel>
+        </Border>
+
+    </Grid>
+
+</Window>

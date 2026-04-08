@@ -1,0 +1,53 @@
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:DeerCrypt.ViewModels.Dialogs"
+        x:Class="DeerCrypt.Views.Dialogs.CompactDialog"
+        x:DataType="vm:CompactDialogViewModel"
+        Background="{DynamicResource MainBackgroundBrush}"
+        Title="Compact Vault"
+        Width="400"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+
+    <StackPanel Margin="24" Spacing="14">
+
+        <TextBlock Text="Compact Vault"
+                   FontSize="18"
+                   FontWeight="SemiBold"
+                   Margin="0,0,0,4" />
+
+        <TextBlock TextWrapping="Wrap"
+                   Text="{Binding InfoText}" />
+
+        <TextBlock TextWrapping="Wrap"
+                   Opacity="0.55"
+                   FontSize="12"
+                   Text="Compacting reclaims disk space from deleted files. On large vaults this may take some time." />
+
+        <!-- Progress bar - only visible while compacting -->
+        <ProgressBar Minimum="0"
+                     Maximum="1"
+                     Value="{Binding Progress}"
+                     IsVisible="{Binding IsCompacting}" />
+
+        <StackPanel Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,6,0,0">
+            <Button Content="Cancel"
+                    Click="OnCancelClicked"
+                    IsVisible="{Binding !IsCompacting}" />
+            <Button Content="Compact Now"
+                    Command="{Binding CompactCommand}"
+                    Classes="accent"
+                    IsDefault="True"
+                    IsVisible="{Binding !IsCompacting}" />
+            <TextBlock Text="Compacting, please wait..."
+                       VerticalAlignment="Center"
+                       IsVisible="{Binding IsCompacting}"
+                       Opacity="0.65" />
+        </StackPanel>
+
+    </StackPanel>
+</Window>

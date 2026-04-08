@@ -1,0 +1,475 @@
+﻿    <Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:DeerCrypt.ViewModels"
+        xmlns:converters="using:DeerCrypt.Converters"
+        xmlns:system="using:System"
+        xmlns:vault="using:DeerCryptLib.Vault"
+        xmlns:svc="using:DeerCrypt.Services"
+        x:Class="DeerCrypt.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="{Binding WindowTitle}"
+        Background="{DynamicResource MainBackgroundBrush}"
+        Width="1100"
+        Height="650"
+        MinWidth="800"
+        MinHeight="500">
+
+    <Window.Styles>
+        <!-- ToggleButton in the toolbar: clear highlight when checked -->
+        <Style Selector="ToggleButton.toolbar-toggle">
+            <Setter Property="BorderThickness"  Value="1" />
+            <Setter Property="Background"       Value="Transparent"/>
+            <Setter Property="BorderBrush"      Value="Transparent" />
+            <Setter Property="CornerRadius"     Value="4" />
+        </Style>
+    </Window.Styles>
+
+    <Design.DataContext>
+        <vm:MainViewModel IsVaultOpen="False" />
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- Menu bar -->
+        <Menu Grid.Row="0">
+            <MenuItem Header="_Vault">
+                <MenuItem Header="_New Vault"  Command="{Binding NewVaultCommand}" />
+                <MenuItem Header="_Open Vault" Command="{Binding OpenVaultCommand}" />
+                <Separator />
+                <MenuItem Header="_Close Vault"
+                          Command="{Binding CloseVaultCommand}"
+                          IsEnabled="{Binding IsVaultOpen}" />
+            </MenuItem>
+            <MenuItem Header="_Add"
+                      IsVisible="{Binding IsVaultOpen}">
+                <MenuItem Header="Add _Files..."
+                          Command="{Binding VaultBrowser.AddFilesCommand}" />
+                <MenuItem Header="Add F_older..."
+                          Command="{Binding VaultBrowser.AddFolderCommand}" />
+            </MenuItem>
+            <MenuItem Header="_Tools"
+                      IsVisible="{Binding IsVaultOpen}">
+                <MenuItem Header="_Compact Vault"
+                          Command="{Binding VaultBrowser.CompactCommand}" />
+                <MenuItem Header="Check _Integrity"
+                          Command="{Binding VaultBrowser.CheckIntegrityCommand}" />
+            </MenuItem>
+        </Menu>
+
+        <Grid Grid.Row="1">
+
+            <!-- No vault open - empty state -->
+            <Grid IsVisible="{Binding !IsVaultOpen}">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                MaxWidth="420"
+                                Margin="32,40,32,40"
+                                Spacing="0">
+
+                        <!-- Icon + title -->
+                        <TextBlock Text="🔐"
+                                   FontSize="52"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="No vault open"
+                                   FontSize="22"
+                                   FontWeight="SemiBold"
+                                   HorizontalAlignment="Center"
+                                   Opacity="0.7"
+                                   Margin="0,8,0,0" />
+                        <TextBlock Text="Create a new vault or open an existing one to get started."
+                                   FontSize="13"
+                                   HorizontalAlignment="Center"
+                                   Opacity="0.4"
+                                   TextWrapping="Wrap"
+                                   TextAlignment="Center"
+                                   Margin="0,6,0,0" />
+
+                        <!-- Action buttons -->
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="8"
+                                    HorizontalAlignment="Center"
+                                    Margin="0,18,0,0">
+                            <Button Content="New Vault"
+                                    Command="{Binding NewVaultCommand}"
+                                    Classes="accent"
+                                    Padding="16,7" />
+                            <Button Content="Open Vault"
+                                    Command="{Binding OpenVaultCommand}"
+                                    Padding="16,7" />
+                        </StackPanel>
+
+                        <!-- Recent vaults section -->
+                        <StackPanel IsVisible="{Binding HasRecentVaults}"
+                                    Margin="0,32,0,0"
+                                    Spacing="0">
+
+                            <TextBlock Text="RECENT VAULTS"
+                                       FontSize="10"
+                                       FontWeight="SemiBold"
+                                       Opacity="0.4"
+                                       LetterSpacing="1"
+                                       Margin="0,0,0,8" />
+
+                            <ItemsControl ItemsSource="{Binding RecentVaults}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="svc:RecentVaultEntry">
+                                        <Grid ColumnDefinitions="*,Auto"
+                                              Margin="0,0,0,2">
+
+                                            <!-- Main click target -->
+                                            <Button Grid.Column="0"
+                                                    Command="{Binding $parent[Window].DataContext.OpenRecentCommand}"
+                                                    CommandParameter="{Binding Path}"
+                                                    Background="Transparent"
+                                                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                                                    BorderThickness="1"
+                                                    Padding="10,8"
+                                                    HorizontalAlignment="Stretch"
+                                                    HorizontalContentAlignment="Left">
+                                                <StackPanel Spacing="1">
+                                                    <TextBlock Text="{Binding Name}"
+                                                               FontWeight="SemiBold"
+                                                               FontSize="13" />
+                                                    <TextBlock Text="{Binding Path}"
+                                                               FontSize="11"
+                                                               Opacity="0.45"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding LastOpened, StringFormat={}{0:yyyy-MM-dd HH:mm}}"
+                                                               FontSize="11"
+                                                               Opacity="0.35" />
+                                                </StackPanel>
+                                            </Button>
+
+                                            <!-- Remove button -->
+                                            <Button Grid.Column="1"
+                                                    Command="{Binding $parent[Window].DataContext.RemoveRecentCommand}"
+                                                    CommandParameter="{Binding Path}"
+                                                    Content="✕"
+                                                    Background="Transparent"
+                                                    BorderThickness="0"
+                                                    Padding="8,0"
+                                                    FontSize="11"
+                                                    Opacity="0.4"
+                                                    VerticalAlignment="Center"
+                                                    ToolTip.Tip="Remove from list" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <!-- Vault browser -->
+            <Grid IsVisible="{Binding $parent[Window].DataContext.IsVaultOpen}"
+                  RowDefinitions="Auto,Auto,Auto,*,Auto"
+                  DataContext="{Binding VaultBrowser}">
+
+                <!-- Toolbar -->
+                <Border Grid.Row="0"
+                        BorderBrush="{DynamicResource SeparatorBrush}"
+                        BorderThickness="0,0,0,1"
+                        Padding="6,5">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
+                            <Button Content="Add Files"
+                                    Command="{Binding AddFilesCommand}"
+                                    Classes="accent"
+                                    Padding="12,4" />
+                            <Button Content="Add Folder"
+                                    Command="{Binding AddFolderCommand}"
+                                    Padding="12,4" />
+                            <Rectangle Width="1"
+                                       Margin="4,4"
+                                       Fill="{DynamicResource SeparatorBrush}"
+                                       VerticalAlignment="Stretch" />
+                            <Button Content="New Folder"
+                                    Command="{Binding NewFolderCommand}"
+                                    Padding="12,4" />
+                            <Button Content="Move"
+                                    Command="{Binding MoveCommand}"
+                                    Padding="12,4" />
+                            <Rectangle Width="1"
+                                       Margin="4,4"
+                                       Fill="{DynamicResource SeparatorBrush}"
+                                       VerticalAlignment="Stretch" />
+                            <ToggleButton Classes="toolbar-toggle"
+                                         IsChecked="{Binding UseInternalViewer, Mode=TwoWay}"
+                                         Padding="10,3"
+                                         ToolTip.Tip="When on, compatible media files open in the built-in player (on-the-fly decryption). When off, all files are extracted to a temp folder and opened externally.">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <TextBlock Text="🎬" FontSize="12" VerticalAlignment="Center" />
+                                    <TextBlock Text="Internal Viewer" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </ToggleButton>
+                        </StackPanel>
+
+                        <!-- Search box -->
+                        <Grid Grid.Column="1"
+                              HorizontalAlignment="Right"
+                              VerticalAlignment="Center"
+                              Width="220">
+                            <TextBox Text="{Binding SearchText}"
+                                     Watermark="Search vault…"
+                                     Padding="8,0,26,0"
+                                     VerticalContentAlignment="Center" />
+                            <Button Content="✕"
+                                    Command="{Binding ClearSearchCommand}"
+                                    IsVisible="{Binding IsSearchActive}"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Padding="0"
+                                    Width="22"
+                                    FontSize="10"
+                                    Opacity="0.5"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center"
+                                    Margin="0,0,4,0"
+                                    ToolTip.Tip="Clear search" />
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <!-- Navigation bar - back/forward + breadcrumb -->
+                <Border Grid.Row="1"
+                        x:Name="NavBar"
+                        BorderBrush="{DynamicResource SeparatorBrush}"
+                        BorderThickness="0,0,0,1"
+                        Padding="4,3"
+                        DragDrop.AllowDrop="True">
+                    <Grid ColumnDefinitions="Auto,Auto,*">
+
+                        <Button Grid.Column="0"
+                                Content="←"
+                                Command="{Binding NavigateBackCommand}"
+                                Width="28" Height="28"
+                                Padding="0"
+                                Margin="0,0,2,0"
+                                FontSize="14" />
+
+                        <Button Grid.Column="1"
+                                Content="→"
+                                Command="{Binding NavigateForwardCommand}"
+                                Width="28" Height="28"
+                                Padding="0"
+                                Margin="0,0,8,0"
+                                FontSize="14" />
+
+                        <!-- Breadcrumb -->
+                        <ItemsControl Grid.Column="2"
+                                      ItemsSource="{Binding Breadcrumb}"
+                                      VerticalAlignment="Center">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:BreadcrumbSegment">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Content="{Binding Name}"
+                                                Command="{Binding $parent[ItemsControl].DataContext.NavigateToBreadcrumbCommand}"
+                                                CommandParameter="{Binding}"
+                                                Padding="4,2"
+                                                BorderThickness="0">
+                                            <Button.Background>
+                                                <MultiBinding Converter="{x:Static converters:EqualsToBrushConverter.Instance}">
+                                                    <Binding Path="DirectoryId"/>
+                                                    <Binding Path="$parent[ItemsControl].DataContext.BreadcrumbDragTargetId"/>
+                                                </MultiBinding>
+                                            </Button.Background>
+                                        </Button>
+                                        <TextBlock Text="/"
+                                                   VerticalAlignment="Center"
+                                                   Margin="2,0"
+                                                   Opacity="0.35" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Grid>
+                </Border>
+
+                <!-- Column headers -->
+                <Border Grid.Row="2"
+                        BorderBrush="{DynamicResource SeparatorBrush}"
+                        BorderThickness="0,0,0,1">
+                    <Grid ColumnDefinitions="20,28,*,140,100,150"
+                          Margin="8,0,8,0">
+                        <Button Grid.Column="2"
+                                Content="{Binding NameHeaderText}"
+                                Command="{Binding SortByCommand}"
+                                CommandParameter="Name"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Padding="0"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Left"
+                                Classes="columnHeader" />
+                        <Button Grid.Column="3"
+                                Content="{Binding TypeHeaderText}"
+                                Command="{Binding SortByCommand}"
+                                CommandParameter="Type"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Padding="0"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Left"
+                                Classes="columnHeader" />
+                        <Button Grid.Column="4"
+                                Content="{Binding SizeHeaderText}"
+                                Command="{Binding SortByCommand}"
+                                CommandParameter="Size"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Padding="0"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Right"
+                                Classes="columnHeader" />
+                        <Button Grid.Column="5"
+                                Content="{Binding DateHeaderText}"
+                                Command="{Binding SortByCommand}"
+                                CommandParameter="Date"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Padding="0"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Right"
+                                Classes="columnHeader"
+                                Margin="8,5,0,5" />
+                    </Grid>
+                </Border>
+
+                <!-- File listing -->
+                <ListBox Grid.Row="3"
+                         x:Name="FileList"
+                         ItemsSource="{Binding CurrentItems}"
+                         SelectedItem="{Binding SelectedFile}"
+                         SelectionMode="Multiple">
+                    <ListBox.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Extract"
+                                      Command="{Binding ExtractCommand}" />
+                            <MenuItem Header="Move"
+                                      Command="{Binding MoveCommand}" />
+                            <MenuItem Header="Rename"
+                                      Command="{Binding RenameCommand}" />
+                            <MenuItem Header="Delete"
+                                      Command="{Binding DeleteCommand}" />
+                            <Separator />
+                            <MenuItem Header="New Folder"
+                                      Command="{Binding NewFolderCommand}" />
+                        </ContextMenu>
+                    </ListBox.ContextMenu>
+
+                    <ListBox.DataTemplates>
+                        <DataTemplate x:DataType="vm:VaultItemViewModel">
+                            <Grid ColumnDefinitions="20,28,*,140,100,150"
+                                  Margin="8,5,8,5">
+
+                                <!-- Lock icon - only visible when file is checked out -->
+                                <TextBlock Grid.Column="0"
+                                           Text="🔒"
+                                           FontSize="10"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,4,0"
+                                           IsVisible="{Binding IsCheckedOut}"
+                                           Opacity="0.7" />
+
+                                <!-- File/folder icon -->
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding Item,
+                                               Converter={x:Static converters:VaultItemIconConverter.Instance}}"
+                                           Margin="0,0,8,0"
+                                           VerticalAlignment="Center" />
+
+                                <!-- Name - switches between display stack and rename TextBox -->
+                                <StackPanel Grid.Column="2"
+                                            VerticalAlignment="Center"
+                                            Spacing="1"
+                                            IsVisible="{Binding !IsRenaming}">
+                                    <TextBlock Text="{Binding DisplayName}" />
+                                    <TextBlock Text="{Binding SubText}"
+                                               FontSize="11"
+                                               Opacity="0.45"
+                                               IsVisible="{Binding HasSubText}" />
+                                </StackPanel>
+                                <TextBox Grid.Column="2"
+                                         Text="{Binding EditingName}"
+                                         IsVisible="{Binding IsRenaming}"
+                                         BorderThickness="1"
+                                         Padding="2"
+                                         VerticalAlignment="Center"
+                                         GotFocus="OnRenameBoxGotFocus"
+                                         LostFocus="OnRenameBoxLostFocus" />
+
+                                <!-- Type -->
+                                <TextBlock Grid.Column="3"
+                                           Text="{Binding TypeText}"
+                                           VerticalAlignment="Center"
+                                           Opacity="0.6" />
+
+                                <!-- Size -->
+                                <TextBlock Grid.Column="4"
+                                           Text="{Binding AsFile.OriginalSize,
+                                               Converter={x:Static converters:FileSizeConverter.Instance}}"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Right"
+                                           Opacity="0.6" />
+
+                                <!-- Date (works for both files and folders) -->
+                                <TextBlock Grid.Column="5"
+                                           Text="{Binding DateText}"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Right"
+                                           Opacity="0.6"
+                                           Margin="8,0,0,0" />
+
+                                <!-- Drag-over highlight overlay -->
+                                <Border Grid.Column="0"
+                                        Grid.ColumnSpan="6"
+                                        CornerRadius="3"
+                                        BorderThickness="1.5"
+                                        IsVisible="{Binding IsDragTarget}"
+                                        IsHitTestVisible="False">
+        
+                                <Border.BorderBrush>
+                                    <SolidColorBrush Color="{DynamicResource SystemAccentColor}" />
+                                </Border.BorderBrush>
+    
+                                <Border.Background>
+                                    <SolidColorBrush Color="{DynamicResource SystemAccentColor}" Opacity="0.1" />
+                                </Border.Background>
+    
+                            </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.DataTemplates>
+                </ListBox>
+
+                <!-- Status bar -->
+                <Border Grid.Row="4"
+                        BorderBrush="{DynamicResource SeparatorBrush}"
+                        BorderThickness="0,1,0,0"
+                        Height="26">
+                    <Grid ColumnDefinitions="*,Auto"
+                          Margin="8,0">
+                        <TextBlock Grid.Column="0"
+                                   Text="{Binding StatusMessage}"
+                                   VerticalAlignment="Center"
+                                   FontSize="12" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding VaultInfoText}"
+                                   VerticalAlignment="Center"
+                                   FontSize="12"
+                                   Opacity="0.6" />
+                    </Grid>
+                </Border>
+
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

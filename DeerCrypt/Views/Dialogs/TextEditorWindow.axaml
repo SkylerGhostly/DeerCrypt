@@ -1,0 +1,237 @@
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:DeerCrypt.ViewModels.Dialogs"
+        xmlns:avaloniaEdit="using:AvaloniaEdit"
+        xmlns:md="using:Markdown.Avalonia"
+        x:Class="DeerCrypt.Views.Dialogs.TextEditorWindow"
+        x:DataType="vm:TextEditorViewModel"
+        Background="{DynamicResource MainBackgroundBrush}"
+        Title="{Binding WindowTitle}"
+        Width="980" Height="660"
+        MinWidth="480" MinHeight="320"
+        RequestedThemeVariant="Default">
+
+    <Window.Styles>
+
+        <Style Selector="Button.editor-tool">
+            <Setter Property="Background"       Value="Transparent" />
+            <Setter Property="BorderThickness"  Value="0" />
+            <Setter Property="Padding"          Value="8,4" />
+            <Setter Property="FontSize"         Value="12" />
+            <Setter Property="CornerRadius"     Value="4" />
+            <Setter Property="VerticalContentAlignment"   Value="Center" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="ToggleButton.editor-tool">
+            <Setter Property="Background"       Value="Transparent" />
+            <Setter Property="BorderThickness"  Value="0" />
+            <Setter Property="Padding"          Value="8,4" />
+            <Setter Property="FontSize"         Value="12" />
+            <Setter Property="CornerRadius"     Value="4" />
+            <Setter Property="VerticalContentAlignment"   Value="Center" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+        </Style>
+
+        <!-- Vertical rule dividers in toolbar -->
+        <Style Selector="Border.tool-sep">
+            <Setter Property="Width"            Value="1" />
+            <Setter Property="Background"       Value="#20808080" />
+            <Setter Property="Margin"           Value="4,5" />
+        </Style>
+
+        <!-- Status bar label style -->
+        <Style Selector="TextBlock.status">
+            <Setter Property="FontSize"         Value="11" />
+            <Setter Property="Opacity"          Value="0.55" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+    </Window.Styles>
+
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveCommand}" />
+        <KeyBinding Gesture="Ctrl+G" Command="{Binding GoToLineCommand}" />
+    </Window.KeyBindings>
+
+    <Grid RowDefinitions="Auto,*,Auto">
+
+        <!--  Toolbar  -->
+        <Border Grid.Row="0"
+                BorderBrush="{DynamicResource SeparatorBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="4,3">
+
+            <StackPanel Orientation="Horizontal" Spacing="1">
+
+                <!-- Save -->
+                <Button Classes="editor-tool"
+                        Command="{Binding SaveCommand}"
+                        ToolTip.Tip="Save (Ctrl+S)">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Text="💾" FontSize="13" />
+                        <TextBlock Text="Save" />
+                    </StackPanel>
+                </Button>
+
+                <Border Classes="tool-sep" />
+
+                <!-- Go to line -->
+                <Button Classes="editor-tool"
+                        Command="{Binding GoToLineCommand}"
+                        ToolTip.Tip="Go to Line (Ctrl+G)"
+                        Padding="10,6"
+                        Content="Go to Line…" />
+
+                <Border Classes="tool-sep" />
+
+                <!-- Font size -->
+                <Button Classes="editor-tool"
+                        Command="{Binding DecreaseFontSizeCommand}"
+                        ToolTip.Tip="Decrease Font Size (Ctrl+−)"
+                        Content="A−"
+                        FontSize="13" />
+
+                <Button Classes="editor-tool"
+                        Command="{Binding IncreaseFontSizeCommand}"
+                        ToolTip.Tip="Increase Font Size (Ctrl+=)"
+                        Content="A+"
+                        FontSize="13" />
+
+                <Border Classes="tool-sep" />
+
+                <!-- Word wrap toggle (disabled while markdown preview is open - preview always wraps) -->
+                <ToggleButton Classes="editor-tool"
+                              IsChecked="{Binding WordWrap}"
+                              IsEnabled="{Binding !ShowMarkdownPreview}"
+                              ToolTip.Tip="Toggle Word Wrap"
+                              Content="Wrap" />
+
+                <!-- Markdown preview toggle (only shown for .md files) -->
+                <ToggleButton Classes="editor-tool"
+                              IsChecked="{Binding ShowMarkdownPreview}"
+                              IsVisible="{Binding IsMarkdown}"
+                              ToolTip.Tip="Toggle Markdown Preview"
+                              Content="Preview" />
+
+                <!-- Read-only indicator -->
+                <Border IsVisible="{Binding IsReadOnly}"
+                        Background="#18E05252"
+                        CornerRadius="4"
+                        Padding="8,3"
+                        Margin="4,0">
+                    <TextBlock Text="Read Only"
+                               FontSize="11"
+                               Foreground="#E05252"
+                               VerticalAlignment="Center" />
+                </Border>
+
+            </StackPanel>
+        </Border>
+
+        <!--  Editor + optional Markdown preview  -->
+        <!--
+            Column widths are managed from code-behind so the preview column
+            collapses to 0 when hidden and can be resized by the GridSplitter.
+            Initial: col 0 = *, col 1 = 5 (splitter), col 2 = 300 (preview).
+        -->
+        <Grid Grid.Row="1"
+              x:Name="EditorSplitGrid"
+              ColumnDefinitions="*,5,300">
+
+            <!--
+                AvaloniaEdit TextEditor.
+                All editor-specific properties (Document, SyntaxHighlighting, WordWrap,
+                ShowLineNumbers, FontSize, IsReadOnly) are set from code-behind to avoid
+                compiled-binding complications with AvaloniaEdit's property system.
+            -->
+            <avaloniaEdit:TextEditor x:Name="Editor"
+                                     Grid.Column="0"
+                                     HorizontalAlignment="Stretch"
+                                     VerticalAlignment="Stretch"
+                                     FontFamily="Cascadia Code,Consolas,Courier New,monospace" />
+
+            <!-- Splitter - width comes from the column, not the control -->
+            <GridSplitter Grid.Column="1"
+                          ResizeDirection="Columns"
+                          IsVisible="{Binding ShowMarkdownPreview}" />
+
+            <!-- Markdown preview pane - no fixed Width; the column controls the size -->
+            <md:MarkdownScrollViewer Grid.Column="2"
+                                     x:Name="MarkdownPreview"
+                                     IsVisible="{Binding ShowMarkdownPreview}"
+                                     Margin="8,4" />
+
+        </Grid>
+
+        <!--  Status bar  -->
+        <Border Grid.Row="2"
+                BorderBrush="{DynamicResource SeparatorBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="8,3">
+
+            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto">
+
+                <TextBlock Grid.Column="0"
+                           Classes="status"
+                           Text="{Binding CaretLine, StringFormat='Ln {0}'}" />
+
+                <TextBlock Grid.Column="1"
+                           Classes="status"
+                           Text=", " />
+
+                <TextBlock Grid.Column="2"
+                           Classes="status"
+                           Text="{Binding CaretColumn, StringFormat='Col {0}'}" />
+
+                <Border Grid.Column="3"
+                        Classes="tool-sep" />
+
+                <TextBlock Grid.Column="4"
+                           Classes="status"
+                           Text="{Binding LineCount, StringFormat='{}{0} lines'}" />
+
+                <Border Grid.Column="5"
+                        Classes="tool-sep" />
+
+                <TextBlock Grid.Column="6"
+                           Classes="status"
+                           Text="{Binding EncodingText}" />
+
+                <Border Grid.Column="7"
+                        Classes="tool-sep" />
+
+                <TextBlock Grid.Column="8"
+                           Classes="status"
+                           Text="{Binding LineEndingText}" />
+
+                <Border Grid.Column="9"
+                        Classes="tool-sep" />
+
+                <!-- Language indicator -->
+                <TextBlock Grid.Column="10"
+                           Classes="status"
+                           Text="{Binding LanguageLabel}" />
+
+                <!-- Word count (markdown only) -->
+                <TextBlock Grid.Column="12"
+                           Classes="status"
+                           IsVisible="{Binding IsMarkdown}"
+                           HorizontalAlignment="Right"
+                           Text="{Binding WordCount, StringFormat='{}{0} words'}"
+                           Margin="0,0,8,0" />
+
+                <!-- Load-mode / save message -->
+                <TextBlock Grid.Column="13"
+                           Classes="status"
+                           Text="{Binding StatusMessage}"
+                           HorizontalAlignment="Right"
+                           IsVisible="{Binding StatusMessage,
+                               Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+            </Grid>
+        </Border>
+
+    </Grid>
+
+</Window>
