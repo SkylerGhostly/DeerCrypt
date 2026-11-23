@@ -21,7 +21,7 @@ namespace DeerCrypt
         // Lazy singleton - initialised on first media open, never disposed (app lifetime).
         private static LibVLC? _libVLC;
         public  static LibVLC  LibVLC => _libVLC ??= OperatingSystem.IsLinux( )
-            ? new LibVLC( enableDebugLogs: false, "--avcodec-hw=none" ) // NVIDIA VA-API shim workaround; remove when on libvlc 4
+            ? new LibVLC( enableDebugLogs: false, "--no-video-title-show" ) // hardware decoding is switched off per media (see MediaSession)
             : new LibVLC( enableDebugLogs: false );
 
         public override void Initialize( )
@@ -80,6 +80,28 @@ namespace DeerCrypt
                     Directory.Delete( TempDirectory, recursive: true );
             }
             catch { }
+        }
+
+        /// <summary>
+        /// Large image textures can crowd glyphs out of Skia's cache; after a big image is
+        /// released, purge the font cache and redraw the main window so text renders cleanly.
+        /// </summary>
+        public static void RefreshGlyphCache( )
+        {
+            SKGraphics.PurgeFontCache( );
+            Avalonia.Threading.Dispatcher.UIThread.Post( ( ) =>
+            {
+                if( Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime dt
+                    && dt.MainWindow is { } main )
+                    Invalidate( main );
+            }, Avalonia.Threading.DispatcherPriority.Render );
+
+            static void Invalidate( Avalonia.Visual v )
+            {
+                v.InvalidateVisual( );
+                foreach( var child in Avalonia.VisualTree.VisualExtensions.GetVisualChildren( v ) )
+                    Invalidate( child );
+            }
         }
 
         public static string TempDirectory =>

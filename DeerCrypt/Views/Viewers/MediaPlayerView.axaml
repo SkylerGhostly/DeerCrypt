@@ -1,0 +1,154 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ic="using:FluentIcons.Avalonia"
+             xmlns:vv="using:DeerCrypt.ViewModels.Viewers"
+             xmlns:vlc="using:LibVLCSharp.Avalonia"
+             x:Class="DeerCrypt.Views.Viewers.MediaPlayerView"
+             x:DataType="vv:MediaDocumentViewModel"
+             Focusable="True">
+
+    <UserControl.Styles>
+        <Style Selector="Button.play">
+            <Setter Property="Width" Value="34" />
+            <Setter Property="Height" Value="34" />
+            <Setter Property="CornerRadius" Value="17" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.play:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight1}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid RowDefinitions="*,Auto">
+
+        <!-- Stage -->
+        <Panel Grid.Row="0" Background="Black" x:Name="Stage">
+            <!-- Native video surface; it always draws above Avalonia content, so it's hidden for audio -->
+            <vlc:VideoView x:Name="VideoView" IsVisible="{Binding ShowVideoSurface}" />
+
+            <!-- Now playing (audio) -->
+            <Grid IsVisible="{Binding Session.IsAudioOnly, FallbackValue=False}"
+                  Background="{DynamicResource SurfaceSunkenBrush}">
+                <StackPanel Orientation="Horizontal" Spacing="28" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="32">
+                    <Border Width="240" Height="240" CornerRadius="14" ClipToBounds="True"
+                            Background="{DynamicResource SurfaceRaisedBrush}">
+                        <Panel>
+                            <Image Source="{Binding Session.AlbumArt}" Stretch="UniformToFill"
+                                   IsVisible="{Binding Session.AlbumArt, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                            <ic:SymbolIcon Symbol="MusicNote2" FontSize="72" Foreground="#E0648A"
+                                           IsVisible="{Binding Session.AlbumArt, Converter={x:Static ObjectConverters.IsNull}}" />
+                        </Panel>
+                    </Border>
+                    <StackPanel VerticalAlignment="Center" Spacing="6" MaxWidth="420">
+                        <TextBlock Text="Now playing" Classes="caption" />
+                        <TextBlock Text="{Binding Session.TrackTitle}" FontSize="24" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding Session.Artist}" FontSize="15" Classes="secondary"
+                                   IsVisible="{Binding Session.HasArtist}" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding Session.Album}" Classes="secondary"
+                                   IsVisible="{Binding Session.HasAlbum}" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding CountText}" Classes="caption" Margin="0,6,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+
+            <!-- Loading / error (only meaningful before a video surface is showing) -->
+            <StackPanel IsVisible="{Binding IsLoading}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                <ProgressBar IsIndeterminate="True" Classes="meter" Width="140" />
+                <TextBlock Text="Decrypting…" Foreground="#A3A3AB" HorizontalAlignment="Center" />
+            </StackPanel>
+            <StackPanel IsVisible="{Binding HasError}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Spacing="10" MaxWidth="460">
+                <ic:SymbolIcon Symbol="ErrorCircle" FontSize="36" Foreground="#F06A6A" HorizontalAlignment="Center" />
+                <TextBlock Text="{Binding ErrorText}" Foreground="#D8D8DE" TextWrapping="Wrap" TextAlignment="Center" />
+                <Button Classes="secondary" HorizontalAlignment="Center" Command="{Binding NextCommand}"
+                        IsVisible="{Binding HasPlaylist}" Content="Try the next file" />
+            </StackPanel>
+        </Panel>
+
+        <!-- Controls -->
+        <Border Grid.Row="1" Classes="divider-top" Background="{DynamicResource ChromeBackgroundBrush}" Padding="12,2,12,4">
+            <StackPanel Spacing="0">
+                <Grid ColumnDefinitions="56,*,56">
+                    <TextBlock Text="{Binding Session.CurrentTimeText, FallbackValue='0:00'}" Classes="secondary" FontSize="12"
+                               VerticalAlignment="Center" />
+                    <Slider Grid.Column="1" x:Name="SeekSlider" Minimum="0" Maximum="1"
+                            Value="{Binding Session.SeekPosition, Mode=OneWay, FallbackValue=0}"
+                            VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="2" Text="{Binding Session.TotalTimeText, FallbackValue='--:--'}" Classes="secondary"
+                               FontSize="12" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                </Grid>
+
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <Button Classes="ghost icon" Command="{Binding PreviousCommand}" IsVisible="{Binding HasPlaylist}"
+                                ToolTip.Tip="Previous (P)">
+                            <ic:SymbolIcon Symbol="Previous" />
+                        </Button>
+                        <Button Classes="ghost icon" Command="{Binding SkipBackCommand}" ToolTip.Tip="Back 10 seconds (J)">
+                            <ic:SymbolIcon Symbol="SkipBack10" />
+                        </Button>
+                        <Button Classes="play" Command="{Binding PlayPauseCommand}" ToolTip.Tip="Play or pause (Space)">
+                            <Panel>
+                                <ic:SymbolIcon Symbol="Pause" IconVariant="Filled" FontSize="18"
+                                               IsVisible="{Binding Session.IsPlaying, FallbackValue=False}" />
+                                <ic:SymbolIcon Symbol="Play" IconVariant="Filled" FontSize="18"
+                                               IsVisible="{Binding !Session.IsPlaying, FallbackValue=True}" />
+                            </Panel>
+                        </Button>
+                        <Button Classes="ghost icon" Command="{Binding SkipForwardCommand}" ToolTip.Tip="Forward 10 seconds (L)">
+                            <ic:SymbolIcon Symbol="SkipForward10" />
+                        </Button>
+                        <Button Classes="ghost icon" Command="{Binding NextCommand}" IsVisible="{Binding HasPlaylist}"
+                                ToolTip.Tip="Next (N)">
+                            <ic:SymbolIcon Symbol="Next" />
+                        </Button>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="18,0">
+                        <TextBlock Text="{Binding Session.TrackTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Classes="caption" TextTrimming="CharacterEllipsis"
+                                   Text="{Binding Session.Artist}" IsVisible="{Binding Session.HasArtist}" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                        <Button Classes="ghost" Padding="8,4" ToolTip.Tip="Playback speed">
+                            <TextBlock Text="{Binding SpeedText}" FontSize="12" FontWeight="SemiBold" />
+                            <Button.Flyout>
+                                <MenuFlyout Placement="TopEdgeAlignedRight">
+                                    <MenuItem Header="0.5×"  Command="{Binding SetSpeedCommand}" CommandParameter="0.5" />
+                                    <MenuItem Header="0.75×" Command="{Binding SetSpeedCommand}" CommandParameter="0.75" />
+                                    <MenuItem Header="Normal" Command="{Binding SetSpeedCommand}" CommandParameter="1" />
+                                    <MenuItem Header="1.25×" Command="{Binding SetSpeedCommand}" CommandParameter="1.25" />
+                                    <MenuItem Header="1.5×"  Command="{Binding SetSpeedCommand}" CommandParameter="1.5" />
+                                    <MenuItem Header="2×"    Command="{Binding SetSpeedCommand}" CommandParameter="2" />
+                                    <Separator />
+                                    <MenuItem Header="Play the next file when one ends" ToggleType="CheckBox"
+                                              IsChecked="{Binding AutoAdvance}" />
+                                </MenuFlyout>
+                            </Button.Flyout>
+                        </Button>
+                        <ToggleButton Classes="ghost icon" IsChecked="{Binding IsRepeat}" ToolTip.Tip="Repeat this file">
+                            <ic:SymbolIcon Symbol="ArrowRepeat1" />
+                        </ToggleButton>
+                        <ToggleButton Classes="ghost icon" IsChecked="{Binding IsMuted}" ToolTip.Tip="Mute (M)">
+                            <Panel>
+                                <ic:SymbolIcon Symbol="SpeakerMute" IsVisible="{Binding IsMuted}" />
+                                <ic:SymbolIcon Symbol="Speaker2" IsVisible="{Binding !IsMuted}" />
+                            </Panel>
+                        </ToggleButton>
+                        <Slider x:Name="VolumeSlider" Minimum="0" Maximum="150" Width="96" VerticalAlignment="Center"
+                                Value="{Binding Volume}" ToolTip.Tip="Volume (↑ ↓, or scroll)" />
+                        <Button Classes="ghost icon" Command="{Binding FullscreenCommand}" ToolTip.Tip="Full screen (F)" Margin="6,0,0,0">
+                            <ic:SymbolIcon Symbol="FullScreenMaximize" />
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

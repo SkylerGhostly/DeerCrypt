@@ -178,7 +178,7 @@ namespace DeerCrypt.ViewModels
         {
             InspectorMode      = InspectorMode.Multiple;
             InspectedItem      = null;
-            InspectorTitle     = $"{selected.Count} items selected";
+            InspectorTitle     = $"{selected.Count:N0} items selected";
             long bytes         = selected.Sum( i => i.AsFile?.OriginalSize ?? 0 );
             int folders        = selected.Count( i => i.IsDir );
             InspectorSubtitle  = folders > 0

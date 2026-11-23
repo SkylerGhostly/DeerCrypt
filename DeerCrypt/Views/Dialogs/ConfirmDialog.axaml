@@ -35,6 +35,9 @@
                 <Button Classes="secondary" Content="{Binding CancelText}"
                         IsVisible="{Binding HasCancel}" IsCancel="True"
                         Click="OnCancelClicked" />
+                <Button Classes="secondary" Content="{Binding DiscardText}"
+                        IsVisible="{Binding HasDiscard}"
+                        Click="OnDiscardClicked" />
                 <Button Classes="primary" Content="{Binding ConfirmText}"
                         IsVisible="{Binding !IsDanger}" IsDefault="True"
                         Click="OnConfirmClicked" />

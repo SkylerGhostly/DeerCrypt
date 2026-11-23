@@ -4,6 +4,8 @@
 
     <!-- Base text color everywhere -->
     <Style Selector="Window">
+        <!-- App icon on every window (title bar, taskbar, Alt+Tab); without it Linux shows a generic "X" -->
+        <Setter Property="Icon" Value="avares://DeerCrypt/Assets/deercrypt.ico" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />
     </Style>

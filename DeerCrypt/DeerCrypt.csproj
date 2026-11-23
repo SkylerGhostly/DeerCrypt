@@ -5,6 +5,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\deercrypt.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
 	<GCDynamicAdaptationMode>true</GCDynamicAdaptationMode>
 	<ServerGarbageCollection>false</ServerGarbageCollection>
@@ -33,6 +34,11 @@
     <PackageReference Include="TextMateSharp.Grammars" Version="2.0.3" />
     <PackageReference Include="Markdig" Version="1.1.2" />
     <PackageReference Include="OneWare.Markdown.Avalonia.Tight" Version="11.3.11.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\deercrypt.ico" />
+    <AvaloniaResource Include="Assets\deercrypt-256.png" />
   </ItemGroup>
 
   <ItemGroup>

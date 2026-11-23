@@ -1,0 +1,43 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ic="using:FluentIcons.Avalonia"
+        xmlns:vv="using:DeerCrypt.ViewModels.Viewers"
+        x:Class="DeerCrypt.Views.Viewers.DocumentWindow"
+        x:DataType="vv:DocumentViewModel"
+        Title="{Binding Title}"
+        Background="{DynamicResource AppBackgroundBrush}"
+        Width="1100" Height="740"
+        MinWidth="480" MinHeight="320"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid RowDefinitions="Auto,*">
+        <!-- Header: hidden in full screen -->
+        <Border x:Name="Header"
+                Classes="divider-bottom"
+                Background="{DynamicResource ChromeBackgroundBrush}"
+                Padding="12,6">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <ic:SymbolIcon Symbol="{Binding Icon}" IconVariant="Filled"
+                               Foreground="{Binding IconBrush}" Margin="0,0,10,0" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                    <Ellipse Width="7" Height="7" Fill="{DynamicResource AccentBrush}"
+                             IsVisible="{Binding IsDirty}" ToolTip.Tip="Unsaved changes" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
+                    <Button Classes="ghost icon" Click="OnFullscreenClicked" ToolTip.Tip="Full screen (F11)">
+                        <ic:SymbolIcon Symbol="FullScreenMaximize" />
+                    </Button>
+                    <Button Classes="ghost" Click="OnDockClicked" ToolTip.Tip="Move this back into a tab">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <ic:SymbolIcon Symbol="TabDesktop" />
+                            <TextBlock Text="Back to tabs" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <ContentControl Grid.Row="1" Content="{Binding}" />
+    </Grid>
+</Window>

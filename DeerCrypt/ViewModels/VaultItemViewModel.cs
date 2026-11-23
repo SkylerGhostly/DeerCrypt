@@ -32,6 +32,13 @@ namespace DeerCrypt.ViewModels
         [ObservableProperty]
         public partial bool IsCheckedOut { get; set; }
 
+        /// <summary>Set by the ThumbnailService when thumbnails are on and one exists.</summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor( nameof( HasThumbnail ) )]
+        public partial Avalonia.Media.Imaging.Bitmap? Thumbnail { get; set; }
+
+        public bool HasThumbnail => Thumbnail != null;
+
         /// <summary>True for the virtual ".." parent-directory navigation entry.</summary>
         public bool IsParentDir { get; private init; }
 
@@ -182,13 +189,9 @@ namespace DeerCrypt.ViewModels
             {
                 if( IsParentDir ) return "";
                 DateTime? date = AsFile?.AddedAt ?? AsDir?.CreatedAt;
-                if( date is not { } d ) return "";
-                DateTime local = d.ToLocalTime( );
-                return local.Date == DateTime.Today
-                    ? $"Today {local:HH:mm}"
-                    : local.Year == DateTime.Today.Year
-                        ? local.ToString( "MMM d, HH:mm" )
-                        : local.ToString( "MMM d, yyyy" );
+                if( date is not { } d || d == DateTime.MinValue ) return "";
+                // Like Windows Explorer: the system's short date and short time ("11/22/2026 11:49 PM")
+                return d.ToLocalTime( ).ToString( "g", System.Globalization.CultureInfo.CurrentCulture );
             }
         }
 

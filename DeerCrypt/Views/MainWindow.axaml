@@ -4,6 +4,8 @@
         xmlns:converters="using:DeerCrypt.Converters"
         xmlns:svc="using:DeerCrypt.Services"
         xmlns:ic="using:FluentIcons.Avalonia"
+        xmlns:vv="using:DeerCrypt.ViewModels.Viewers"
+        xmlns:views="using:DeerCrypt.Views"
         x:Class="DeerCrypt.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Title="{Binding WindowTitle}"
@@ -29,6 +31,11 @@
         <KeyBinding Gesture="Ctrl+D1"      Command="{Binding VaultBrowser.SetViewModeCommand}" CommandParameter="List" />
         <KeyBinding Gesture="Ctrl+D2"      Command="{Binding VaultBrowser.SetViewModeCommand}" CommandParameter="Grid" />
         <KeyBinding Gesture="Ctrl+I"       Command="{Binding VaultBrowser.ToggleInspectorCommand}" />
+        <KeyBinding Gesture="Ctrl+Shift+H" Command="{Binding VaultBrowser.ToggleThumbnailPrivacyCommand}" />
+        <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding VaultBrowser.OpenSettingsCommand}" />
+        <KeyBinding Gesture="Ctrl+W"       Command="{Binding VaultBrowser.CloseActiveDocumentCommand}" />
+        <KeyBinding Gesture="Ctrl+Tab"     Command="{Binding VaultBrowser.CycleTabsCommand}" CommandParameter="Forward" />
+        <KeyBinding Gesture="Ctrl+Shift+Tab" Command="{Binding VaultBrowser.CycleTabsCommand}" CommandParameter="Back" />
     </Window.KeyBindings>
 
     <Window.Styles>
@@ -37,7 +44,7 @@
         <Style Selector="ListBox#FileList">
             <Setter Property="ItemTemplate">
                 <DataTemplate x:DataType="vm:VaultItemViewModel">
-                    <Grid ColumnDefinitions="30,*,150,90,140"
+                    <Grid ColumnDefinitions="30,*,Auto,Auto,Auto"
                           Margin="{DynamicResource ListRowPadding}"
                           Background="Transparent">
 
@@ -79,11 +86,14 @@
                                  LostFocus="OnRenameBoxLostFocus" />
 
                         <TextBlock Grid.Column="2" Text="{Binding TypeText}" Classes="secondary"
-                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="12,0,0,0" />
+                                   Width="{Binding $parent[ListBox].((vm:VaultBrowserViewModel)DataContext).TypeColumnWidth}" Padding="12,0,8,0"
+                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                         <TextBlock Grid.Column="3" Text="{Binding SizeText}" Classes="secondary"
-                                   VerticalAlignment="Center" HorizontalAlignment="Right" />
+                                   Width="{Binding $parent[ListBox].((vm:VaultBrowserViewModel)DataContext).SizeColumnWidth}" Padding="8,0,0,0" TextAlignment="Right"
+                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                         <TextBlock Grid.Column="4" Text="{Binding DateText}" Classes="secondary"
-                                   VerticalAlignment="Center" HorizontalAlignment="Right" />
+                                   Width="{Binding $parent[ListBox].((vm:VaultBrowserViewModel)DataContext).DateColumnWidth}" Padding="8,0,0,0" TextAlignment="Right"
+                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
 
                         <!-- Drop-target highlight -->
                         <Border Grid.Column="0" Grid.ColumnSpan="5"
@@ -104,7 +114,7 @@
             <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
             <Setter Property="ItemsPanel">
                 <ItemsPanelTemplate>
-                    <WrapPanel Orientation="Horizontal" />
+                    <views:VirtualizingWrapPanel />
                 </ItemsPanelTemplate>
             </Setter>
             <Setter Property="ItemTemplate">
@@ -114,11 +124,31 @@
                            Background="Transparent"
                            ToolTip.Tip="{Binding DisplayName}">
                         <StackPanel VerticalAlignment="Center" Spacing="6" Margin="8">
-                            <Panel HorizontalAlignment="Center">
+                            <Panel HorizontalAlignment="Center" Height="{DynamicResource GridThumbHeight}">
                                 <ic:SymbolIcon Symbol="{Binding Icon}"
                                                IconVariant="Filled"
                                                FontSize="44"
-                                               Foreground="{Binding IconBrush}" />
+                                               VerticalAlignment="Center"
+                                               Foreground="{Binding IconBrush}">
+                                    <ic:SymbolIcon.IsVisible>
+                                        <MultiBinding Converter="{x:Static BoolConverters.Or}">
+                                            <Binding Path="!HasThumbnail" />
+                                            <Binding Path="!$parent[ListBox].((vm:VaultBrowserViewModel)DataContext).ShowThumbnails" />
+                                        </MultiBinding>
+                                    </ic:SymbolIcon.IsVisible>
+                                </ic:SymbolIcon>
+                                <!-- Thumbnail: clipped to a rounded frame so the privacy blur stays inside it -->
+                                <Border CornerRadius="{StaticResource RadiusSmall}" ClipToBounds="True"
+                                        HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <Border.IsVisible>
+                                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                            <Binding Path="HasThumbnail" />
+                                            <Binding Path="$parent[ListBox].((vm:VaultBrowserViewModel)DataContext).ShowThumbnails" />
+                                        </MultiBinding>
+                                    </Border.IsVisible>
+                                    <Image Classes="thumb" Source="{Binding Thumbnail}" Stretch="Uniform"
+                                           MaxHeight="{DynamicResource GridThumbHeight}" />
+                                </Border>
                                 <Border IsVisible="{Binding IsCheckedOut}"
                                         Background="{DynamicResource AppBackgroundBrush}"
                                         CornerRadius="8" Width="16" Height="16"
@@ -158,6 +188,20 @@
             </Setter>
         </Style>
 
+        <!-- Blurred-until-hover thumbnails (privacy) -->
+        <Style Selector="ListBox#FileList.blurthumbs Image.thumb">
+            <Setter Property="Effect" Value="blur(22)" />
+        </Style>
+        <Style Selector="ListBox#FileList.blurthumbs ListBoxItem:pointerover Image.thumb">
+            <Setter Property="Effect" Value="{x:Null}" />
+        </Style>
+        <Style Selector="Border.inspector-preview Image.thumb.blur">
+            <Setter Property="Effect" Value="blur(24)" />
+        </Style>
+        <Style Selector="Border.inspector-preview:pointerover Image.thumb.blur">
+            <Setter Property="Effect" Value="{x:Null}" />
+        </Style>
+
         <!-- Previous results stay visible but dimmed while a slow load is in flight -->
         <Style Selector="ListBox#FileList.loading">
             <Setter Property="Opacity" Value="0.55" />
@@ -166,6 +210,62 @@
         <!-- Keep folder tree expansion in sync with the view model -->
         <Style Selector="TreeView#FolderTree TreeViewItem" x:DataType="vm:DirectoryNodeViewModel">
             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+        </Style>
+
+        <!-- Document tabs -->
+        <Style Selector="Button.tab">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="7,7,0,0" />
+            <Setter Property="Padding" Value="12,7,8,7" />
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+            <Setter Property="VerticalAlignment" Value="Bottom" />
+        </Style>
+        <Style Selector="Button.tab:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource HoverBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        </Style>
+        <Style Selector="Button.tab.active /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="BorderThickness" Value="0,2,0,0" />
+        </Style>
+        <Style Selector="Button.tab-close">
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="6,0,0,0" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+        </Style>
+        <Style Selector="Button.tab-close:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource PressedBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        </Style>
+
+        <!-- Column resize handle: a thin grabbable strip on a header cell's left edge -->
+        <Style Selector="Thumb.column-resizer">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="Margin" Value="-4,4,0,4" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Cursor" Value="SizeWestEast" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Background="{TemplateBinding Background}">
+                        <Rectangle Width="1" Fill="{DynamicResource HairlineStrongBrush}" HorizontalAlignment="Center" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="Thumb.column-resizer:pointerover">
+            <Setter Property="Background" Value="{DynamicResource HoverBrush}" />
         </Style>
 
         <!-- Toggle-style ghost buttons (details panel) -->
@@ -359,13 +459,26 @@
                              MaxWidth="520"
                              Margin="24,0"
                              Text="{Binding VaultBrowser.SearchText}"
-                             Watermark="Search the whole vault">
+                             Watermark="{Binding VaultBrowser.SearchWatermark, FallbackValue='Search the whole vault'}">
                         <TextBox.InnerLeftContent>
                             <ic:SymbolIcon Symbol="Search" Margin="10,0,2,0"
                                            Foreground="{DynamicResource TextMutedBrush}" />
                         </TextBox.InnerLeftContent>
                         <TextBox.InnerRightContent>
-                            <Panel Margin="0,0,6,0">
+                            <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,6,0">
+                                <!-- Scope: whole vault or the current folder -->
+                                <Button Classes="ghost" Padding="6,2"
+                                        Classes.selected="{Binding VaultBrowser.SearchInFolder}"
+                                        Command="{Binding VaultBrowser.ToggleSearchScopeCommand}"
+                                        ToolTip.Tip="Search the whole vault, or only the folder you're in (and its subfolders)">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <ic:SymbolIcon Symbol="Folder" FontSize="12" IsVisible="{Binding VaultBrowser.SearchInFolder}" />
+                                        <ic:SymbolIcon Symbol="ShieldLock" FontSize="12" IsVisible="{Binding !VaultBrowser.SearchInFolder}" />
+                                        <TextBlock Text="{Binding VaultBrowser.SearchScopeText}" FontSize="11.5" MaxWidth="120"
+                                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Panel VerticalAlignment="Center">
                                 <TextBlock Text="Ctrl K"
                                            Classes="caption"
                                            VerticalAlignment="Center"
@@ -377,7 +490,8 @@
                                         ToolTip.Tip="Clear search">
                                     <ic:SymbolIcon Symbol="Dismiss" FontSize="12" />
                                 </Button>
-                            </Panel>
+                                </Panel>
+                            </StackPanel>
                         </TextBox.InnerRightContent>
                     </TextBox>
 
@@ -387,25 +501,14 @@
                             <ic:SymbolIcon Symbol="Settings" FontSize="18" />
                             <Button.Flyout>
                                 <MenuFlyout Placement="BottomEdgeAlignedRight">
-                                    <MenuItem Header="Theme">
-                                        <MenuItem.Icon><ic:SymbolIcon Symbol="DarkTheme" /></MenuItem.Icon>
-                                        <MenuItem Header="Match system" ToggleType="Radio" GroupName="theme"
-                                                  IsChecked="{Binding IsThemeSystem, Mode=OneWay}"
-                                                  Command="{Binding SetThemeCommand}" CommandParameter="System" />
-                                        <MenuItem Header="Dark" ToggleType="Radio" GroupName="theme"
-                                                  IsChecked="{Binding IsThemeDark, Mode=OneWay}"
-                                                  Command="{Binding SetThemeCommand}" CommandParameter="Dark" />
-                                        <MenuItem Header="Light" ToggleType="Radio" GroupName="theme"
-                                                  IsChecked="{Binding IsThemeLight, Mode=OneWay}"
-                                                  Command="{Binding SetThemeCommand}" CommandParameter="Light" />
+                                    <MenuItem Header="Settings" Command="{Binding VaultBrowser.OpenSettingsCommand}" InputGesture="Ctrl+OemComma">
+                                        <MenuItem.Icon><ic:SymbolIcon Symbol="Settings" /></MenuItem.Icon>
                                     </MenuItem>
-                                    <MenuItem Header="Compact layout" ToggleType="CheckBox"
-                                              IsChecked="{Binding IsCompact, Mode=OneWay}"
-                                              Command="{Binding ToggleCompactCommand}" />
-                                    <MenuItem Header="Open files in built-in viewers" ToggleType="CheckBox"
-                                              IsChecked="{Binding VaultBrowser.UseInternalViewer, Mode=OneWay}"
-                                              Command="{Binding VaultBrowser.ToggleInternalViewerCommand}"
-                                              ToolTip.Tip="When on, images, media, and text open inside DeerCrypt and are decrypted in memory. When off, files are extracted to a temp folder and opened in your default apps." />
+                                    <MenuItem Header="Hide thumbnails" ToggleType="CheckBox"
+                                              IsVisible="{Binding VaultBrowser.ThumbnailsEnabled, FallbackValue=False}"
+                                              IsChecked="{Binding VaultBrowser.ThumbnailsHidden, Mode=OneWay, FallbackValue=False}"
+                                              Command="{Binding VaultBrowser.ToggleThumbnailPrivacyCommand}"
+                                              InputGesture="Ctrl+Shift+H" />
                                     <Separator />
                                     <MenuItem Header="Compact vault…" Command="{Binding VaultBrowser.CompactCommand}">
                                         <MenuItem.Icon><ic:SymbolIcon Symbol="Broom" /></MenuItem.Icon>
@@ -521,8 +624,6 @@
                                     <TextBlock Text="{Binding StorageSummaryText}" Classes="secondary" FontSize="12"
                                                VerticalAlignment="Center" />
                                 </StackPanel>
-                                <ProgressBar Classes="meter" Minimum="0" Maximum="100"
-                                             Value="{Binding StorageInUsePercent}" />
                                 <TextBlock Text="{Binding StorageDetailText}" Classes="caption"
                                            TextWrapping="Wrap" />
                                 <Button Classes="ghost"
@@ -544,7 +645,75 @@
                               ResizeDirection="Columns" />
 
                 <!-- Content -->
-                <Grid Grid.Column="2" RowDefinitions="Auto,Auto,*,Auto" ColumnDefinitions="*,Auto">
+                <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto">
+
+                    <!-- ═══ Tabs: Files + open documents ═══ -->
+                    <Border Grid.Row="0" IsVisible="{Binding HasDocuments}"
+                            Background="{DynamicResource ChromeBackgroundBrush}"
+                            Classes="divider-bottom" Padding="6,5,6,0">
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                            <StackPanel Orientation="Horizontal" Spacing="2" x:Name="TabStrip">
+                                <Button Classes="tab" Classes.active="{Binding IsBrowserActive}"
+                                        Command="{Binding ShowBrowserCommand}" ToolTip.Tip="Files (Ctrl+Tab cycles tabs)">
+                                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,4,0">
+                                        <ic:SymbolIcon Symbol="Folder" IconVariant="Filled" Foreground="#E0A93B" />
+                                        <TextBlock Text="Files" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <ItemsControl ItemsSource="{Binding Documents}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal" Spacing="2" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vv:DocumentViewModel">
+                                            <Button Classes="tab" Classes.active="{Binding IsActive}"
+                                                    Command="{Binding $parent[ItemsControl].((vm:VaultBrowserViewModel)DataContext).ActivateDocumentCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTip.Tip="{Binding Title}">
+                                                <Button.ContextMenu>
+                                                    <ContextMenu>
+                                                        <MenuItem Header="Pop out into a window" Tag="popout" Click="OnTabMenuClick">
+                                                            <MenuItem.Icon><ic:SymbolIcon Symbol="WindowNew" /></MenuItem.Icon>
+                                                        </MenuItem>
+                                                        <MenuItem Header="Show in folder" Tag="reveal" Click="OnTabMenuClick">
+                                                            <MenuItem.Icon><ic:SymbolIcon Symbol="FolderOpen" /></MenuItem.Icon>
+                                                        </MenuItem>
+                                                        <Separator />
+                                                        <MenuItem Header="Close" Tag="close" Click="OnTabMenuClick" InputGesture="Ctrl+W">
+                                                            <MenuItem.Icon><ic:SymbolIcon Symbol="Dismiss" /></MenuItem.Icon>
+                                                        </MenuItem>
+                                                        <MenuItem Header="Close other tabs" Tag="others" Click="OnTabMenuClick" />
+                                                        <MenuItem Header="Close all tabs" Tag="all" Click="OnTabMenuClick" />
+                                                    </ContextMenu>
+                                                </Button.ContextMenu>
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <ic:SymbolIcon Symbol="{Binding Icon}" IconVariant="Filled" Foreground="{Binding IconBrush}" />
+                                                    <TextBlock Text="{Binding Title}" MaxWidth="200" TextTrimming="CharacterEllipsis"
+                                                               VerticalAlignment="Center" />
+                                                    <ic:SymbolIcon Symbol="Speaker2" FontSize="13" Foreground="{DynamicResource AccentBrush}"
+                                                                   IsVisible="{Binding HasBackgroundActivity}" ToolTip.Tip="Playing" />
+                                                    <Ellipse Width="7" Height="7" Fill="{DynamicResource AccentBrush}" VerticalAlignment="Center"
+                                                             IsVisible="{Binding IsDirty}" ToolTip.Tip="Unsaved changes" />
+                                                    <Button Classes="tab-close" ToolTip.Tip="Close (Ctrl+W)"
+                                                            Command="{Binding $parent[ItemsControl].((vm:VaultBrowserViewModel)DataContext).CloseDocumentCommand}"
+                                                            CommandParameter="{Binding}">
+                                                        <ic:SymbolIcon Symbol="Dismiss" FontSize="11" />
+                                                    </Button>
+                                                </StackPanel>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+
+                    <Panel Grid.Row="1">
+                    <!-- ═══ Files (browser) ═══ -->
+                    <Grid x:Name="BrowserPane" IsVisible="{Binding IsBrowserActive}"
+                          RowDefinitions="Auto,Auto,*" ColumnDefinitions="*,Auto">
 
                     <!-- Toolbar: navigation, location, actions -->
                     <Border Grid.Row="0"
@@ -679,24 +848,30 @@
                     <!-- Column headers (list view only) -->
                     <Border Grid.Row="1"
                             Classes="divider-bottom"
-                            IsVisible="{Binding !IsGridView}">
-                        <Grid ColumnDefinitions="30,*,150,90,140" Margin="16,0,16,0">
+                            IsVisible="{Binding !EffectiveGridView}">
+                        <Grid ColumnDefinitions="30,*,Auto,Auto,Auto" Margin="16,0,16,0">
                             <Button Grid.Column="1" Classes="columnHeader"
                                     Content="{Binding NameHeaderText}"
                                     Command="{Binding SortByCommand}" CommandParameter="Name"
                                     HorizontalContentAlignment="Left" />
-                            <Button Grid.Column="2" Classes="columnHeader"
-                                    Content="{Binding TypeHeaderText}"
-                                    Command="{Binding SortByCommand}" CommandParameter="Type"
-                                    HorizontalContentAlignment="Left" Margin="12,6,0,6" />
-                            <Button Grid.Column="3" Classes="columnHeader"
-                                    Content="{Binding SizeHeaderText}"
-                                    Command="{Binding SortByCommand}" CommandParameter="Size"
-                                    HorizontalContentAlignment="Right" />
-                            <Button Grid.Column="4" Classes="columnHeader"
-                                    Content="{Binding DateHeaderText}"
-                                    Command="{Binding SortByCommand}" CommandParameter="Date"
-                                    HorizontalContentAlignment="Right" />
+                            <Panel Grid.Column="2" Width="{Binding TypeColumnWidth}">
+                                <Button Classes="columnHeader" Content="{Binding TypeHeaderText}"
+                                        Command="{Binding SortByCommand}" CommandParameter="Type"
+                                        HorizontalContentAlignment="Left" Padding="12,0,8,0" />
+                                <Thumb Classes="column-resizer" Tag="Type" />
+                            </Panel>
+                            <Panel Grid.Column="3" Width="{Binding SizeColumnWidth}">
+                                <Button Classes="columnHeader" Content="{Binding SizeHeaderText}"
+                                        Command="{Binding SortByCommand}" CommandParameter="Size"
+                                        HorizontalContentAlignment="Right" />
+                                <Thumb Classes="column-resizer" Tag="Size" />
+                            </Panel>
+                            <Panel Grid.Column="4" Width="{Binding DateColumnWidth}">
+                                <Button Classes="columnHeader" Content="{Binding DateHeaderText}"
+                                        Command="{Binding SortByCommand}" CommandParameter="Date"
+                                        HorizontalContentAlignment="Right" />
+                                <Thumb Classes="column-resizer" Tag="Date" />
+                            </Panel>
                         </Grid>
                     </Border>
 
@@ -704,8 +879,9 @@
                     <Panel Grid.Row="2">
                         <ListBox x:Name="FileList"
                                  Classes="files"
-                                 Classes.grid="{Binding IsGridView}"
+                                 Classes.grid="{Binding EffectiveGridView}"
                                  Classes.loading="{Binding ShowLoadingBar}"
+                                 Classes.blurthumbs="{Binding BlurThumbnails}"
                                  ItemsSource="{Binding CurrentItems}"
                                  SelectedItem="{Binding SelectedFile}"
                                  SelectionMode="Multiple">
@@ -713,6 +889,10 @@
                                 <ContextMenu>
                                     <MenuItem Header="Open" Command="{Binding OpenCommand}" InputGesture="Enter">
                                         <MenuItem.Icon><ic:SymbolIcon Symbol="Open" /></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Show in folder" Command="{Binding RevealSelectedCommand}"
+                                              IsVisible="{Binding !ShowBreadcrumb}">
+                                        <MenuItem.Icon><ic:SymbolIcon Symbol="FolderOpen" /></MenuItem.Icon>
                                     </MenuItem>
                                     <MenuItem Header="Extract…" Command="{Binding ExtractCommand}">
                                         <MenuItem.Icon><ic:SymbolIcon Symbol="ArrowDownload" /></MenuItem.Icon>
@@ -772,14 +952,34 @@
                         <ScrollViewer HorizontalScrollBarVisibility="Disabled">
                             <StackPanel Margin="18,18,18,24" Spacing="16">
 
-                                <!-- Preview area (thumbnails arrive in a later phase; icon for now) -->
-                                <Border Height="150"
+                                <!-- Preview: the thumbnail when there is one (and thumbnails are showing), else the icon -->
+                                <Border Height="150" Classes="inspector-preview"
                                         CornerRadius="{StaticResource RadiusLarge}"
+                                        ClipToBounds="True"
                                         Background="{DynamicResource SurfaceSunkenBrush}">
-                                    <ic:SymbolIcon Symbol="{Binding InspectorIcon}"
-                                                   IconVariant="Filled"
-                                                   FontSize="56"
-                                                   Foreground="{Binding InspectorIconBrush}" />
+                                    <Panel>
+                                        <ic:SymbolIcon Symbol="{Binding InspectorIcon}"
+                                                       IconVariant="Filled"
+                                                       FontSize="56"
+                                                       Foreground="{Binding InspectorIconBrush}">
+                                            <ic:SymbolIcon.IsVisible>
+                                                <MultiBinding Converter="{x:Static BoolConverters.Or}">
+                                                    <Binding Path="!InspectedItem.HasThumbnail" FallbackValue="True" />
+                                                    <Binding Path="!ShowThumbnails" />
+                                                </MultiBinding>
+                                            </ic:SymbolIcon.IsVisible>
+                                        </ic:SymbolIcon>
+                                        <Image Classes="thumb" Classes.blur="{Binding BlurThumbnails}"
+                                               Source="{Binding InspectedItem.Thumbnail, FallbackValue={x:Null}}"
+                                               Stretch="Uniform" Margin="10">
+                                            <Image.IsVisible>
+                                                <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                                    <Binding Path="InspectedItem.HasThumbnail" FallbackValue="False" />
+                                                    <Binding Path="ShowThumbnails" />
+                                                </MultiBinding>
+                                            </Image.IsVisible>
+                                        </Image>
+                                    </Panel>
                                 </Border>
 
                                 <StackPanel Spacing="3">
@@ -879,8 +1079,25 @@
                         </ScrollViewer>
                     </Border>
 
+                    </Grid>
+
+                    <!-- ═══ Open documents: every view stays alive; only the active one is visible ═══ -->
+                    <ItemsControl ItemsSource="{Binding Documents}" IsVisible="{Binding !IsBrowserActive}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <Panel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vv:DocumentViewModel">
+                                <ContentControl Content="{Binding}" IsVisible="{Binding IsActive}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    </Panel>
+
                     <!-- ═══ Status bar with activity ═══ -->
-                    <Border Grid.Row="3" Grid.ColumnSpan="2" Classes="divider-top" Padding="10,0,14,0" Height="34"
+                    <Border Grid.Row="2" Classes="divider-top" IsVisible="{Binding ShowStatusBar}" Padding="10,0,14,0" Height="34"
                             Background="{DynamicResource ChromeBackgroundBrush}">
                         <Grid ColumnDefinitions="*,Auto,Auto">
 
@@ -999,6 +1216,7 @@
                             </Button>
 
                             <TextBlock Grid.Column="2" Text="{Binding SelectionText}"
+                                       IsVisible="{Binding IsBrowserActive}"
                                        Classes="secondary" FontSize="12" VerticalAlignment="Center" />
                         </Grid>
                     </Border>

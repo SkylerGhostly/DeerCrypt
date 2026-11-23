@@ -66,6 +66,9 @@ namespace DeerCryptLib.Vault
             _vaultPath   = vaultPath;
         }
 
+        /// <summary>Full path of the vault file.</summary>
+        public string FilePath => _vaultPath;
+
         /// <summary>True when reads run on their own connections (WAL mode is active).</summary>
         public bool HasConcurrentReads => _readers.Length > 0;
 

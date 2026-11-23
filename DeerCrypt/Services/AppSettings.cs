@@ -27,5 +27,17 @@
 
         /// <summary>Whether the details panel on the right is shown.</summary>
         public bool InspectorOpen { get; set; } = true;
+
+        /// <summary>List view column widths (the Name column takes the remaining space).</summary>
+        public double TypeColumnWidth { get; set; } = 150;
+        public double SizeColumnWidth { get; set; } = 90;
+        public double DateColumnWidth { get; set; } = 170;
+
+        /// <summary>
+        /// Thumbnails for vaults that haven't chosen their own: "Off", "Blurred" (until hovered),
+        /// or "On". New vaults follow it; a vault from before thumbnails existed asks first,
+        /// since turning them on writes a cache into it.
+        /// </summary>
+        public string DefaultThumbnails { get; set; } = "On";
     }
 }

@@ -97,6 +97,7 @@ namespace DeerCrypt.ViewModels
             _searchCts?.Cancel( );
             _searchCts = new CancellationTokenSource( );
             var ct = _searchCts.Token;
+            if( !string.IsNullOrWhiteSpace( value ) ) ActiveDocument = null; // results show in the Files tab
             RaiseListStateChanged( );
             _ = RunSearchDebouncedAsync( value, ct );
         }
@@ -122,17 +123,41 @@ namespace DeerCrypt.ViewModels
             }
 
             StatusMessage = "Searching…";
+            RequestScroll( ListScroll.Top );
             int version = BeginLoad( );
             try
             {
-                var results = await Vault.ListRecursiveAsync( query, ct );
+                var match    = SearchQuery.Parse( query );
+                var scopeDir = SearchInFolder ? _currentDirectory : null;
+
+                // Plain text over the whole vault can use the database's own LIKE filter;
+                // wildcards and folder scope filter the full listing in memory.
+                IReadOnlyList<VaultEntry> files = !match.IsPattern && scopeDir == null
+                    ? await Vault.ListRecursiveAsync( query.Trim( ), ct )
+                    : await Vault.ListRecursiveAsync( null, ct );
                 if( ct.IsCancellationRequested || !IsCurrentLoad( version ) ) return;
 
+                HashSet<string>? inScope = scopeDir == null ? null : CollectSubtreeIds( scopeDir );
                 var pathMap = BuildDirPathMap( );
-                var items   = new List<VaultItemViewModel>( results.Count );
+                var items   = new List<VaultItemViewModel>( );
 
-                foreach( var entry in results )
+                // Folders whose names match (from the in-memory tree)
+                foreach( var (node, parentId) in WalkFolders( ) )
                 {
+                    if( node.IsRoot || !match.IsMatch( node.Name ) ) continue;
+                    if( inScope != null && ( parentId == null || !inScope.Contains( parentId ) ) ) continue;
+                    var dir = new VaultDirectoryEntry( node.DirectoryId, node.Name, parentId, DateTime.MinValue );
+                    var vm  = new VaultItemViewModel( dir );
+                    if( parentId != null && pathMap.TryGetValue( parentId, out string? p ) ) vm.SubText = p;
+                    WireItemNotifications( vm );
+                    items.Add( vm );
+                }
+
+                foreach( var entry in files )
+                {
+                    if( inScope != null && !inScope.Contains( entry.DirectoryId ) ) continue;
+                    if( ( match.IsPattern || scopeDir != null ) && !match.IsMatch( entry.Name ) ) continue;
+
                     var vm = new VaultItemViewModel( entry );
                     if( pathMap.TryGetValue( entry.DirectoryId, out string? path ) )
                         vm.SubText = path;
@@ -142,12 +167,13 @@ namespace DeerCrypt.ViewModels
                     items.Add( vm );
                 }
 
-                ReplaceItems( items );
+                ReplaceItems( GetSortedItems( items ) );
 
-                int count = results.Count;
+                int count = items.Count;
+                string where = scopeDir == null ? "" : $" in \"{scopeDir.Name}\"";
                 StatusMessage = count == 0
-                    ? $"No results for \"{query}\""
-                    : $"{count} result{( count == 1 ? "" : "s" )} for \"{query}\"";
+                    ? $"No results for \"{query}\"{where}"
+                    : $"{count:N0} result{( count == 1 ? "" : "s" )} for \"{query}\"{where}";
             }
             catch( OperationCanceledException ) { }
             catch( Exception ex )
@@ -215,6 +241,7 @@ namespace DeerCrypt.ViewModels
             // Notify commands when multi-selection changes
             SelectedItems.CollectionChanged += ( _, _ ) =>
             {
+                if( _selectionBatch ) return;
                 RenameCommand.NotifyCanExecuteChanged();
                 DeleteCommand.NotifyCanExecuteChanged();
                 ExtractCommand.NotifyCanExecuteChanged();
@@ -238,7 +265,7 @@ namespace DeerCrypt.ViewModels
         /// Called by MainViewModel after a vault is opened.
         /// Loads the directory tree and selects the root.
         /// </summary>
-        public async Task LoadAsync( CancellationToken cancellationToken = default )
+        public async Task LoadAsync( bool isNewVault = false, CancellationToken cancellationToken = default )
         {
             RootNodes.Clear( );
             CurrentItems.Clear( );
@@ -251,6 +278,7 @@ namespace DeerCrypt.ViewModels
                 "Vault",
                 isRoot: true);
 
+            await LoadThumbnailSettingsAsync( isNewVault, cancellationToken );
             await rootNode.LoadChildrenAsync( Vault, cancellationToken );
             RootNodes.Add( rootNode );
             OnPropertyChanged( nameof( FolderNodes ) );
@@ -272,7 +300,7 @@ namespace DeerCrypt.ViewModels
             int totalItems = filePaths.Count + folderPaths.Count;
             if( totalItems == 0 ) return;
 
-            string noun = $"{totalItems} item{( totalItems == 1 ? "" : "s" )}";
+            string noun = $"{totalItems:N0} item{( totalItems == 1 ? "" : "s" )}";
             var activity = new ActivityItem( $"Adding {noun}", FluentIcons.Common.Symbol.ArrowUpload );
 
             await Activities.RunAsync( activity,
@@ -440,7 +468,7 @@ namespace DeerCrypt.ViewModels
                 await OpenFileAsync( SelectedFile, cancellationToken );
         }
 
-        private bool CanOpen => SelectedFile != null && !SelectedFile.IsParentDir;
+        private bool CanOpen => IsBrowserActive && SelectedFile != null && !SelectedFile.IsParentDir;
 
         public Action? FocusRenameBox { get; set; }
 
@@ -453,19 +481,23 @@ namespace DeerCrypt.ViewModels
         }
 
         private bool CanRename =>
+            IsBrowserActive &&
             SelectedItems.Count == 1 &&
             !SelectedItems [ 0 ].IsParentDir &&
             !SelectedItems [ 0 ].IsCheckedOut;
 
         private bool CanExtract =>
+            IsBrowserActive &&
             SelectedItems.Count > 0 &&
             SelectedItems.All( i => !i.IsParentDir );
 
         private bool CanDelete =>
+            IsBrowserActive &&
             SelectedItems.Count > 0 &&
             SelectedItems.All( i => !i.IsParentDir && !i.IsCheckedOut );
 
         private bool CanMove =>
+            IsBrowserActive &&
             SelectedItems.Count > 0 &&
             SelectedItems.All( i => !i.IsParentDir );
 
@@ -506,9 +538,18 @@ namespace DeerCrypt.ViewModels
             bool pushToBack = true,
             CancellationToken cancellationToken = default )
         {
+            // New place starts at the top; going up/back brings the folder you came from into view
+            if( ActiveSmartView == null && _currentDirectory != null && _currentDirectory.DirectoryId == node.DirectoryId )
+                RequestScroll( ListScroll.Keep );
+            else if( ActiveSmartView == null && ChildOnPathTowards( _currentDirectory, node ) is { } childId )
+                RequestScroll( ListScroll.Item, childId );
+            else
+                RequestScroll( ListScroll.Top );
+
             // Cancel any in-flight search or library view and reset the search box silently
             ResetSearchSilently( );
             _viewCts?.Cancel( );
+            ActiveDocument = null; // browsing always brings the Files tab forward
             bool leavingSmartView = ActiveSmartView != null;
             ActiveSmartView = null;
             if( leavingSmartView && SortColumn == SortColumn.Date && SortDescending )
@@ -1343,9 +1384,6 @@ namespace DeerCrypt.ViewModels
         [ObservableProperty]
         public partial bool UseInternalViewer { get; set; } = App.SettingsService.Settings.UseInternalViewer;
 
-        [RelayCommand]
-        private void ToggleInternalViewer( ) => UseInternalViewer = !UseInternalViewer;
-
         partial void OnUseInternalViewerChanged( bool value )
         {
             App.SettingsService.Settings.UseInternalViewer = value;
@@ -1372,15 +1410,15 @@ namespace DeerCrypt.ViewModels
                 switch( viewerType )
                 {
                     case FileViewerType.Media:
-                        await OpenInMediaPlayerAsync( item, cancellationToken );
+                        await OpenInMediaPlayerAsync( item );
                         return;
 
                     case FileViewerType.Image:
-                        await OpenInImageViewerAsync( item, cancellationToken );
+                        await OpenInImageViewerAsync( item );
                         return;
 
                     case FileViewerType.Text:
-                        OpenInTextEditorAsync( item );
+                        await OpenInTextEditorAsync( item );
                         return;
 
                     case FileViewerType.External:
@@ -1391,13 +1429,13 @@ namespace DeerCrypt.ViewModels
                         switch( choice )
                         {
                             case OpenWithChoice.MediaPlayer:
-                                await OpenInMediaPlayerAsync( item, cancellationToken );
+                                await OpenInMediaPlayerAsync( item );
                                 return;
                             case OpenWithChoice.ImageViewer:
-                                await OpenInImageViewerAsync( item, cancellationToken );
+                                await OpenInImageViewerAsync( item );
                                 return;
                             case OpenWithChoice.TextEditor:
-                                OpenInTextEditorAsync( item );
+                                await OpenInTextEditorAsync( item );
                                 return;
                             case OpenWithChoice.External:
                                 break;   // fall through to the external open path below
@@ -1494,103 +1532,8 @@ namespace DeerCrypt.ViewModels
             _ = WatchForReleaseAsync( item, checkedOut, cts.Token );
         }
 
-        /// <summary>
-        /// Opens a media file directly from the vault in the built-in LibVLC player.
-        ///
-        /// Files ≤ 64 MB are fully buffered into a <see cref="System.IO.MemoryStream"/> before
-        /// being handed to VLC.  A MemoryStream has zero per-read overhead and is synchronously
-        /// seekable, which lets VLC's MP4 demuxer instantly locate the moov atom (even when it
-        /// sits at the end of the file) and report an accurate duration.  Without this, VLC's
-        /// async-backed stream can mis-time moov discovery on short clips, causing wrong
-        /// duration display and a non-moving seekbar.
-        ///
-        /// Files > 64 MB continue to use the streaming <see cref="DeerCryptLib.Vault.VaultReadStream"/>
-        /// directly (also seekable) to avoid holding large allocations in memory.
-        /// </summary>
-        private async Task OpenInMediaPlayerAsync(
-            VaultItemViewModel item,
-            CancellationToken  cancellationToken )
-        {
-            const long BufferThreshold = 64L * 1024 * 1024; // 64 MB
 
-            System.IO.Stream mediaStream;
-            try
-            {
-                var vaultStream = await Vault.OpenReadStreamAsync( item.AsFile!.Id, cancellationToken );
 
-                if( vaultStream.Length <= BufferThreshold )
-                {
-                    // Buffer the entire decrypted file so VLC gets a native,
-                    // zero-overhead MemoryStream with full random-access capability.
-                    var ms = new System.IO.MemoryStream( (int)vaultStream.Length );
-                    await vaultStream.CopyToAsync( ms, cancellationToken );
-                    vaultStream.Dispose( );
-                    ms.Position = 0;
-                    mediaStream = ms;
-                }
-                else
-                {
-                    mediaStream = vaultStream;
-                }
-            }
-            catch( Exception ex )
-            {
-                StatusMessage = $"Failed to open '{item.DisplayName}': {ex.Message}";
-                return;
-            }
-
-            var vm     = new MediaPlayerViewModel( App.LibVLC, mediaStream, item.DisplayName );
-            var window = new MediaPlayerWindow { DataContext = vm };
-            window.Show( );
-        }
-
-        /// <summary>
-        /// Opens an image file in the built-in image viewer.
-        /// Collects all sibling images from the current listing (in display order)
-        /// so the user can navigate forward/back without leaving the viewer.
-        /// </summary>
-        private Task OpenInImageViewerAsync(
-            VaultItemViewModel item,
-            CancellationToken  cancellationToken )
-        {
-            // All images in the current directory, in the current sort order
-            var images = CurrentItems
-                .Where( i => i.IsFile && !i.IsParentDir && FileTypeHelper.IsImage( i.DisplayName ) )
-                .ToList( );
-
-            int startIndex = images.IndexOf( item );
-            if( startIndex < 0 ) { images.Insert( 0, item ); startIndex = 0; }
-
-            var vm = new ImageViewerViewModel( Vault, images, startIndex );
-
-            // When the viewer deletes an image, remove it from the browser listing too.
-            // Store the handler so we can unsubscribe when the window closes, breaking
-            // the reference from vm back to this VaultBrowserViewModel.
-            void itemDeletedHandler( VaultItemViewModel deletedItem )
-            {
-                var existing = CurrentItems.FirstOrDefault( i => i.Id == deletedItem.Id );
-                if( existing != null ) CurrentItems.Remove( existing );
-                _ = RefreshVaultInfoAsync( cancellationToken );
-            }
-            vm.ItemDeleted += itemDeletedHandler;
-
-            var window = new Views.Dialogs.ImageViewerWindow { DataContext = vm };
-            window.Closed += ( _, _ ) => vm.ItemDeleted -= itemDeletedHandler;
-            window.Show( );
-            return Task.CompletedTask;
-        }
-
-        /// <summary>
-        /// Opens a text / code file in the built-in secure text editor.
-        /// The file is decrypted on-the-fly from the vault stream - it never
-        /// touches disk until the user explicitly saves.
-        /// </summary>
-        private void OpenInTextEditorAsync( VaultItemViewModel item )
-        {
-            var vm     = new TextEditorViewModel( Vault, item.AsFile!.Id, item.DisplayName );
-            var window = new TextEditorWindow { DataContext = vm };
-            window.Show( );
-        }
 
         private async Task ExtractToTempAsync(
             string fileId,

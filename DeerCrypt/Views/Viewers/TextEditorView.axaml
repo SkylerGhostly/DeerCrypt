@@ -1,0 +1,130 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ic="using:FluentIcons.Avalonia"
+             xmlns:vv="using:DeerCrypt.ViewModels.Viewers"
+             xmlns:avaloniaEdit="using:AvaloniaEdit"
+             xmlns:md="using:Markdown.Avalonia"
+             x:Class="DeerCrypt.Views.Viewers.TextEditorView"
+             x:DataType="vv:TextDocumentViewModel">
+
+    <UserControl.KeyBindings>
+        <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveCommand}" />
+        <KeyBinding Gesture="Ctrl+G" Command="{Binding GoToLineCommand}" />
+        <KeyBinding Gesture="Ctrl+H" Command="{Binding ReplaceCommand}" />
+        <KeyBinding Gesture="Ctrl+OemPlus"  Command="{Binding IncreaseFontSizeCommand}" />
+        <KeyBinding Gesture="Ctrl+OemMinus" Command="{Binding DecreaseFontSizeCommand}" />
+        <KeyBinding Gesture="Ctrl+D0"       Command="{Binding ResetFontSizeCommand}" />
+        <KeyBinding Gesture="Alt+Z"         Command="{Binding ToggleWordWrapCommand}" />
+    </UserControl.KeyBindings>
+
+    <Grid RowDefinitions="Auto,*,Auto">
+
+        <!-- Toolbar -->
+        <Border Grid.Row="0" Classes="divider-bottom" Padding="10,6">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                    <Button Classes="primary" Command="{Binding SaveCommand}" Padding="10,5" ToolTip.Tip="Save to the vault (Ctrl+S)">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <ic:SymbolIcon Symbol="Save" />
+                            <TextBlock Text="Save" />
+                        </StackPanel>
+                    </Button>
+                    <Rectangle Width="1" Margin="8,6" Fill="{DynamicResource HairlineStrongBrush}" />
+                    <Button Classes="ghost icon" x:Name="UndoBtn" ToolTip.Tip="Undo (Ctrl+Z)">
+                        <ic:SymbolIcon Symbol="ArrowUndo" />
+                    </Button>
+                    <Button Classes="ghost icon" x:Name="RedoBtn" ToolTip.Tip="Redo (Ctrl+Y)">
+                        <ic:SymbolIcon Symbol="ArrowRedo" />
+                    </Button>
+                    <Rectangle Width="1" Margin="8,6" Fill="{DynamicResource HairlineStrongBrush}" />
+                    <Button Classes="ghost icon" Command="{Binding FindCommand}" ToolTip.Tip="Find (Ctrl+F)">
+                        <ic:SymbolIcon Symbol="Search" />
+                    </Button>
+                    <Button Classes="ghost icon" Command="{Binding ReplaceCommand}" ToolTip.Tip="Find and replace (Ctrl+H)"
+                            IsVisible="{Binding !IsReadOnly}">
+                        <ic:SymbolIcon Symbol="DocumentSearch" />
+                    </Button>
+                    <Button Classes="ghost icon" Command="{Binding GoToLineCommand}" ToolTip.Tip="Go to line (Ctrl+G)">
+                        <ic:SymbolIcon Symbol="TextNumberList" />
+                    </Button>
+                </StackPanel>
+
+                <!-- Read-only notice -->
+                <Border Grid.Column="1" IsVisible="{Binding IsReadOnly}" HorizontalAlignment="Center"
+                        Background="{DynamicResource WarningSoftBrush}" CornerRadius="{DynamicResource RadiusSmall}" Padding="10,4">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <ic:SymbolIcon Symbol="LockClosed" FontSize="13" Foreground="{DynamicResource WarningBrush}" />
+                        <TextBlock Text="Read-only" FontSize="12" Foreground="{DynamicResource WarningBrush}" />
+                    </StackPanel>
+                </Border>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                    <!-- Markdown: edit / split / preview -->
+                    <Border Classes="segmented" IsVisible="{Binding IsMarkdown}" Margin="0,0,8,0">
+                        <StackPanel Orientation="Horizontal" Spacing="2">
+                            <Button Classes="ghost" Padding="10,3" Classes.selected="{Binding IsEditMode}"
+                                    Command="{Binding SetMarkdownModeCommand}" CommandParameter="Edit" ToolTip.Tip="Source only">
+                                <ic:SymbolIcon Symbol="Edit" FontSize="14" />
+                            </Button>
+                            <Button Classes="ghost" Padding="10,3" Classes.selected="{Binding IsSplitMode}"
+                                    Command="{Binding SetMarkdownModeCommand}" CommandParameter="Split" ToolTip.Tip="Side by side">
+                                <ic:SymbolIcon Symbol="SplitVertical" FontSize="14" />
+                            </Button>
+                            <Button Classes="ghost" Padding="10,3" Classes.selected="{Binding IsPreviewMode}"
+                                    Command="{Binding SetMarkdownModeCommand}" CommandParameter="Preview" ToolTip.Tip="Preview only">
+                                <ic:SymbolIcon Symbol="Eye" FontSize="14" />
+                            </Button>
+                        </StackPanel>
+                    </Border>
+                    <ToggleButton Classes="ghost icon" IsChecked="{Binding WordWrap}" ToolTip.Tip="Word wrap (Alt+Z)">
+                        <ic:SymbolIcon Symbol="TextWrap" />
+                    </ToggleButton>
+                    <Button Classes="ghost icon" Command="{Binding DecreaseFontSizeCommand}" ToolTip.Tip="Smaller text (Ctrl+−)">
+                        <ic:SymbolIcon Symbol="ZoomOut" />
+                    </Button>
+                    <Button Classes="ghost icon" Command="{Binding IncreaseFontSizeCommand}" ToolTip.Tip="Larger text (Ctrl+=)">
+                        <ic:SymbolIcon Symbol="ZoomIn" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Editor and preview -->
+        <Grid Grid.Row="1" x:Name="SplitGrid" ColumnDefinitions="*,5,*">
+            <avaloniaEdit:TextEditor x:Name="Editor" Grid.Column="0"
+                                     FontFamily="Cascadia Code,JetBrains Mono,Fira Code,DejaVu Sans Mono,Consolas,monospace" />
+            <GridSplitter Grid.Column="1" ResizeDirection="Columns" Background="{DynamicResource HairlineBrush}"
+                          IsVisible="{Binding IsSplitMode}" />
+            <Border Grid.Column="2" Background="{DynamicResource SurfaceRaisedBrush}" IsVisible="{Binding ShowPreview}">
+                <md:MarkdownScrollViewer x:Name="MarkdownPreview" Margin="20,12" />
+            </Border>
+
+            <StackPanel Grid.ColumnSpan="3" IsVisible="{Binding IsLoading}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                <ProgressBar IsIndeterminate="True" Classes="meter" Width="140" />
+                <TextBlock Text="Decrypting…" Classes="secondary" HorizontalAlignment="Center" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Status -->
+        <Border Grid.Row="2" Classes="divider-top" Background="{DynamicResource ChromeBackgroundBrush}" Padding="14,0" Height="28">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                    <TextBlock Classes="secondary" FontSize="12">
+                        <Run Text="Ln" /><Run Text="{Binding CaretLine}" /><Run Text=", Col" /><Run Text="{Binding CaretColumn}" />
+                    </TextBlock>
+                    <TextBlock Classes="secondary" FontSize="12" IsVisible="{Binding HasSelection}"
+                               Text="{Binding SelectionLength, StringFormat='{}{0:N0} selected'}" />
+                    <TextBlock Classes="caption" Text="{Binding LineCount, StringFormat='{}{0:N0} lines'}" />
+                    <TextBlock Classes="caption" Text="{Binding WordCount, StringFormat='{}{0:N0} words'}" />
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="{Binding StatusMessage}" Classes="secondary" FontSize="12"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                    <TextBlock Classes="caption" Text="{Binding EncodingText}" />
+                    <TextBlock Classes="caption" Text="{Binding LineEndingText}" />
+                    <TextBlock Classes="caption" Text="{Binding LanguageLabel}" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

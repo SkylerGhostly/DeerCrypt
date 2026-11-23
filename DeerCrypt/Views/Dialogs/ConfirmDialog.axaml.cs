@@ -11,6 +11,9 @@ namespace DeerCrypt.Views.Dialogs
         }
 
         private void OnConfirmClicked( object? sender, RoutedEventArgs e ) => Close( true );
-        private void OnCancelClicked( object? sender, RoutedEventArgs e ) => Close( false );
+        private void OnCancelClicked( object? sender, RoutedEventArgs e ) =>
+            Close( DataContext is DeerCrypt.ViewModels.Dialogs.ConfirmDialogViewModel { HasDiscard: true } ? null : false );
+
+        private void OnDiscardClicked( object? sender, RoutedEventArgs e ) => Close( false );
     }
 }

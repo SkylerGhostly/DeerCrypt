@@ -1,6 +1,8 @@
 ﻿<Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:converters="using:DeerCrypt.Converters"
+             xmlns:viewers="using:DeerCrypt.ViewModels.Viewers"
+             xmlns:viewerViews="using:DeerCrypt.Views.Viewers"
              x:Class="DeerCrypt.App"
              RequestedThemeVariant="Default">
 
@@ -18,6 +20,22 @@
         <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
         <StyleInclude Source="avares://DeerCrypt/Themes/Controls.axaml" />
     </Application.Styles>
+
+    <!-- Each open document (tab or popped-out window) renders with its viewer -->
+    <Application.DataTemplates>
+        <DataTemplate DataType="viewers:ImageDocumentViewModel">
+            <viewerViews:ImageViewerView />
+        </DataTemplate>
+        <DataTemplate DataType="viewers:MediaDocumentViewModel">
+            <viewerViews:MediaPlayerView />
+        </DataTemplate>
+        <DataTemplate DataType="viewers:TextDocumentViewModel">
+            <viewerViews:TextEditorView />
+        </DataTemplate>
+        <DataTemplate DataType="viewers:SettingsDocumentViewModel">
+            <viewerViews:SettingsView />
+        </DataTemplate>
+    </Application.DataTemplates>
 
     <Application.Resources>
         <ResourceDictionary>

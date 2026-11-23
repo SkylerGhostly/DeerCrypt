@@ -47,7 +47,9 @@ namespace DeerCrypt.ViewModels
         // Design-time constructor
         public MainViewModel( ) : this( new VaultService( ), new RecentVaultsService( ) ) { }
 
-        public async void OnVaultOpened( string vaultPath )
+        public async void OnVaultOpened( string vaultPath ) => await OpenedAsync( vaultPath, isNewVault: false );
+
+        public async Task OpenedAsync( string vaultPath, bool isNewVault )
         {
             IsVaultOpen = true;
             VaultName   = Path.GetFileNameWithoutExtension( vaultPath );
@@ -57,7 +59,12 @@ namespace DeerCrypt.ViewModels
             _recentVaultsService.Add( vaultPath );
             SyncRecentVaults( );
 
-            await VaultBrowser.LoadAsync( );
+            var browser = VaultBrowser;
+            await browser.LoadAsync( isNewVault );
+
+            // A vault from before thumbnails: ask before creating a cache in it
+            if( browser.NeedsThumbnailChoice && ( browser.OwnerWindow ?? GetMainWindow( ) ) is { } owner && VaultBrowser == browser )
+                await browser.AskThumbnailChoiceAsync( owner );
         }
 
         private void SyncRecentVaults( )
@@ -80,7 +87,7 @@ namespace DeerCrypt.ViewModels
 
             var result = await dialog.ShowDialog<string?>( GetMainWindow( ) ?? throw new InvalidOperationException( "No main window" ) );
             if( result != null )
-                OnVaultOpened( result );
+                await OpenedAsync( result, isNewVault: true );
         }
 
         [RelayCommand]
@@ -148,8 +155,9 @@ namespace DeerCrypt.ViewModels
             var browser    = VaultBrowser;
             int running    = browser?.Activities.RunningCount ?? 0;
             bool checkedOut = browser?.HasCheckedOutFiles == true;
+            bool unsaved    = browser?.HasUnsavedDocuments == true;
 
-            if( running > 0 || checkedOut )
+            if( running > 0 || checkedOut || unsaved )
             {
                 var lines = new System.Collections.Generic.List<string>( );
                 if( running > 0 )
@@ -157,6 +165,8 @@ namespace DeerCrypt.ViewModels
                                "Files that were already finished stay in the vault; the one in progress is rolled back." );
                 if( checkedOut )
                     lines.Add( "Files open in other apps will be closed, and changes you haven't saved back will be lost." );
+                if( unsaved )
+                    lines.Add( "You have unsaved edits in the text editor. They'll be lost." );
 
                 var confirmVm = new ConfirmDialogViewModel
                 {
@@ -175,6 +185,9 @@ namespace DeerCrypt.ViewModels
 
             if( browser != null )
             {
+                // Close tabs and pop-out windows first: they hold decrypted content and vault streams
+                browser.DiscardAllDocuments( );
+                browser.ShutdownThumbnails( );
                 await browser.Activities.CancelAllAndWaitAsync( );
                 await browser.CloseAllCheckedOutFilesAsync( );
             }
@@ -189,35 +202,6 @@ namespace DeerCrypt.ViewModels
 
         /// <summary>Opens a vault file dropped onto the welcome screen (asks for its password).</summary>
         public Task OpenDroppedVaultAsync( string path ) => OpenRecentAsync( path );
-
-        // Appearance 
-
-        public bool IsThemeSystem => App.SettingsService.Settings.Theme is not ( "Dark" or "Light" );
-        public bool IsThemeDark   => App.SettingsService.Settings.Theme == "Dark";
-        public bool IsThemeLight  => App.SettingsService.Settings.Theme == "Light";
-        public bool IsCompact     => App.SettingsService.Settings.Density == "Compact";
-
-        [RelayCommand]
-        private void SetTheme( string theme )
-        {
-            App.SettingsService.Settings.Theme = theme;
-            App.SettingsService.Save( );
-            ThemeService.ApplyTheme( theme );
-            OnPropertyChanged( nameof( IsThemeSystem ) );
-            OnPropertyChanged( nameof( IsThemeDark ) );
-            OnPropertyChanged( nameof( IsThemeLight ) );
-        }
-
-        [RelayCommand]
-        private void ToggleCompact( )
-        {
-            string density = IsCompact ? "Comfortable" : "Compact";
-            App.SettingsService.Settings.Density = density;
-            App.SettingsService.Save( );
-            ThemeService.ApplyDensity( density );
-            OnPropertyChanged( nameof( IsCompact ) );
-        }
-
 
         private static Window? GetMainWindow( ) =>
             ( Application.Current?.ApplicationLifetime

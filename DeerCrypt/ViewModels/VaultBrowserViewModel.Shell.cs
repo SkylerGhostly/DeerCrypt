@@ -123,7 +123,9 @@ namespace DeerCrypt.ViewModels
 
         private async Task ShowSmartViewAsync( SidebarKind kind )
         {
+            RequestScroll( ListScroll.Top );
             ResetSearchSilently( );
+            ActiveDocument = null;
 
             ActiveSmartView = kind;
             CanNavigateBack = true;
@@ -238,6 +240,8 @@ namespace DeerCrypt.ViewModels
             }
 
             OnPropertyChanged( nameof( ViewTitle ) );
+            OnPropertyChanged( nameof( SearchScopeText ) );
+            OnPropertyChanged( nameof( SearchWatermark ) );
             NavigateUpCommand.NotifyCanExecuteChanged( );
         }
 
@@ -282,6 +286,7 @@ namespace DeerCrypt.ViewModels
 
         partial void OnIsGridViewChanged( bool value )
         {
+            OnPropertyChanged( nameof( EffectiveGridView ) );
             App.SettingsService.Settings.ViewMode = value ? "Grid" : "List";
             App.SettingsService.Save( );
         }
@@ -301,12 +306,12 @@ namespace DeerCrypt.ViewModels
                 if( n == 0 )
                 {
                     int count = CurrentItems.Count;
-                    return $"{count} item{( count == 1 ? "" : "s" )}";
+                    return $"{count:N0} item{( count == 1 ? "" : "s" )}";
                 }
 
                 long bytes = SelectedItems.Sum( i => i.AsFile?.OriginalSize ?? 0 );
                 string size = bytes > 0 ? $" · {FileSizeConverter.Format( bytes )}" : string.Empty;
-                return $"{n} selected{size}";
+                return $"{n:N0} selected{size}";
             }
         }
 
@@ -349,12 +354,63 @@ namespace DeerCrypt.ViewModels
             if( version == _loadVersion && IsLoading ) ShowLoadingBar = true;
         }
 
+        // Scroll position across list reloads 
+
+        /// <summary>What the list's scroll position should do after the next reload.</summary>
+        public enum ListScroll { Keep, Top, Item }
+
+        private ListScroll _nextScroll = ListScroll.Keep;
+        private string?    _scrollTargetId;
+
+        /// <summary>Raised just before the list is emptied (the view remembers its scroll offset).</summary>
+        public event Action? ItemsReplacing;
+
+        /// <summary>Raised after a reload: keep the old offset (refresh), go to the top (new place), or bring an item into view.</summary>
+        public event Action<ListScroll, VaultItemViewModel?>? ItemsReplaced;
+
+        private void RequestScroll( ListScroll mode, string? targetId = null )
+        {
+            _nextScroll     = mode;
+            _scrollTargetId = targetId;
+        }
+
         /// <summary>Swaps the visible list for freshly loaded items in one go.</summary>
         private void ReplaceItems( IEnumerable<VaultItemViewModel> items )
         {
+            ItemsReplacing?.Invoke( );
+
             CurrentItems.Clear( );
             foreach( var item in items )
                 CurrentItems.Add( item );
+
+            var mode   = _nextScroll;
+            var target = _scrollTargetId == null ? null : CurrentItems.FirstOrDefault( i => i.Id == _scrollTargetId );
+            _nextScroll     = ListScroll.Keep;
+            _scrollTargetId = null;
+
+            if( mode == ListScroll.Item )
+            {
+                if( target != null ) SelectedFile = target; // highlight the folder you just came out of
+                else mode = ListScroll.Top;
+            }
+
+            ItemsReplaced?.Invoke( mode, target );
+        }
+
+        /// <summary>
+        /// Going up (or back) to an ancestor of the folder you were in: the child folder on that path,
+        /// so the list can bring it into view. Null when the move isn't upward.
+        /// </summary>
+        private string? ChildOnPathTowards( DirectoryNodeViewModel? from, DirectoryNodeViewModel to )
+        {
+            for( var cur = from; cur != null; )
+            {
+                var parent = FindParentNode( RootNodes, cur.DirectoryId );
+                if( parent == null ) return null;
+                if( parent.DirectoryId == to.DirectoryId ) return cur.DirectoryId;
+                cur = parent;
+            }
+            return null;
         }
 
         // Empty states
@@ -382,6 +438,7 @@ namespace DeerCrypt.ViewModels
             OnPropertyChanged( nameof( EmptyStateTitle ) );
             OnPropertyChanged( nameof( EmptyStateText ) );
             OnPropertyChanged( nameof( SelectionText ) );
+            OnPropertyChanged( nameof( EffectiveGridView ) );
         }
 
         // Storage summary (sidebar footer)
@@ -414,8 +471,132 @@ namespace DeerCrypt.ViewModels
                 : $"Vault file {FileSizeConverter.Format( info.VaultFileSize )}";
         }
 
+        // Big selections (Ctrl+A on 20k+ items) 
+
+        private bool _selectionBatch;
+
+        /// <summary>
+        /// Replaces the selection in one go. Per-item change handling (command refresh, size sum,
+        /// inspector) would otherwise run once per item - quadratic on huge folders.
+        /// </summary>
+        public void ReplaceSelection( IEnumerable<VaultItemViewModel> items, VaultItemViewModel? primary )
+        {
+            _selectionBatch = true;
+            try
+            {
+                SelectedItems.Clear( );
+                foreach( var item in items ) SelectedItems.Add( item );
+            }
+            finally
+            {
+                _selectionBatch = false;
+            }
+
+            RenameCommand.NotifyCanExecuteChanged( );
+            DeleteCommand.NotifyCanExecuteChanged( );
+            ExtractCommand.NotifyCanExecuteChanged( );
+            MoveCommand.NotifyCanExecuteChanged( );
+            OnPropertyChanged( nameof( HasSelection ) );
+            OnPropertyChanged( nameof( SelectionText ) );
+            ScheduleInspectorUpdate( );
+            SelectedFile = primary;
+        }
+
+        // Search scope 
+
+        /// <summary>Search only the current folder (and its subfolders) instead of the whole vault.</summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor( nameof( SearchScopeText ) )]
+        [NotifyPropertyChangedFor( nameof( SearchWatermark ) )]
+        public partial bool SearchInFolder { get; set; }
+
+        public string SearchScopeText => SearchInFolder ? ( _currentDirectory?.IsRoot == false ? _currentDirectory.Name : "Vault" ) : "Vault";
+
+        public string SearchWatermark => SearchInFolder && _currentDirectory?.IsRoot == false
+            ? $"Search in \"{_currentDirectory.Name}\"  ·  wildcards: *.mp4, photo-??.jpg"
+            : "Search the whole vault  ·  wildcards: *.mp4, photo-??.jpg";
+
+        partial void OnSearchInFolderChanged( bool value )
+        {
+            if( IsSearchActive )
+            {
+                _searchCts?.Cancel( );
+                _searchCts = new CancellationTokenSource( );
+                _ = RunSearchAsync( SearchText, _searchCts.Token );
+            }
+        }
+
+        [RelayCommand]
+        private void ToggleSearchScope( ) => SearchInFolder = !SearchInFolder;
+
+        /// <summary>Every folder ID at or below <paramref name="root"/>.</summary>
+        private static HashSet<string> CollectSubtreeIds( DirectoryNodeViewModel root )
+        {
+            var ids   = new HashSet<string>( );
+            var stack = new Stack<DirectoryNodeViewModel>( );
+            stack.Push( root );
+            while( stack.Count > 0 )
+            {
+                var n = stack.Pop( );
+                ids.Add( n.DirectoryId );
+                foreach( var c in n.Children ) stack.Push( c );
+            }
+            return ids;
+        }
+
+        /// <summary>All folders in the tree with their parent's ID (null for the root).</summary>
+        private IEnumerable<(DirectoryNodeViewModel Node, string? ParentId)> WalkFolders( )
+        {
+            var stack = new Stack<(DirectoryNodeViewModel, string?)>( );
+            foreach( var r in RootNodes ) stack.Push( (r, null) );
+            while( stack.Count > 0 )
+            {
+                var (n, parent) = stack.Pop( );
+                yield return (n, parent);
+                foreach( var c in n.Children ) stack.Push( (c, n.DirectoryId) );
+            }
+        }
+
+        // Resizable list columns 
+
+        public const double MinColumnWidth = 56, MaxColumnWidth = 600;
+
+        [ObservableProperty] public partial double TypeColumnWidth { get; set; } = App.SettingsService.Settings.TypeColumnWidth;
+        [ObservableProperty] public partial double SizeColumnWidth { get; set; } = App.SettingsService.Settings.SizeColumnWidth;
+        [ObservableProperty] public partial double DateColumnWidth { get; set; } = App.SettingsService.Settings.DateColumnWidth;
+
+        /// <summary>Dragging a header handle left widens that column (the Name column gives up the space).</summary>
+        public void ResizeColumn( string column, double deltaX )
+        {
+            double Clamp( double w ) => Math.Clamp( w - deltaX, MinColumnWidth, MaxColumnWidth );
+            switch( column )
+            {
+                case "Type": TypeColumnWidth = Clamp( TypeColumnWidth ); break;
+                case "Size": SizeColumnWidth = Clamp( SizeColumnWidth ); break;
+                case "Date": DateColumnWidth = Clamp( DateColumnWidth ); break;
+            }
+        }
+
+        public void SaveColumnWidths( )
+        {
+            var s = App.SettingsService.Settings;
+            s.TypeColumnWidth = TypeColumnWidth;
+            s.SizeColumnWidth = SizeColumnWidth;
+            s.DateColumnWidth = DateColumnWidth;
+            App.SettingsService.Save( );
+        }
+
+        // Grid view limit 
+
+        /// <summary>What's shown. The grid is virtualized (VirtualizingWrapPanel), so any folder size works.</summary>
+        public bool EffectiveGridView => IsGridView;
+
         private void InitializeShell( )
         {
+            Activities.PropertyChanged += ( _, e ) =>
+            {
+                if( e.PropertyName == nameof( ActivityCenter.ShowStrip ) ) OnPropertyChanged( nameof( ShowStatusBar ) );
+            };
             CurrentItems.CollectionChanged += ( _, e ) =>
             {
                 // A reload replaces the whole list: drop any selection from the previous view
@@ -431,6 +612,7 @@ namespace DeerCrypt.ViewModels
             };
             SelectedItems.CollectionChanged += ( _, _ ) =>
             {
+                if( _selectionBatch ) return;
                 OnPropertyChanged( nameof( HasSelection ) );
                 OnPropertyChanged( nameof( SelectionText ) );
                 ScheduleInspectorUpdate( );

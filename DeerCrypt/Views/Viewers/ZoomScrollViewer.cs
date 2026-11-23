@@ -2,7 +2,7 @@
 using Avalonia.Input;
 using System;
 
-namespace DeerCrypt.Views.Dialogs
+namespace DeerCrypt.Views.Viewers
 {
     /// <summary>
     /// A <see cref="ScrollViewer"/> that does not respond to pointer wheel events.
@@ -20,7 +20,7 @@ namespace DeerCrypt.Views.Dialogs
     /// <para>
     /// Overriding <see cref="OnPointerWheelChanged"/> and omitting the <c>base</c> call suppresses
     /// the scroll logic entirely.  Wheel-based zooming is handled exclusively by the parent
-    /// <see cref="ImageViewerWindow"/>'s tunnel handler, which also manages the scroll offset.
+    /// <see cref="ImageViewerView"/>'s tunnel handler, which also manages the scroll offset.
     /// Scrollbar interaction (thumb drag, track click) is unaffected.
     /// </para>
     /// </summary>
@@ -35,7 +35,7 @@ namespace DeerCrypt.Views.Dialogs
         protected override void OnPointerWheelChanged( PointerWheelEventArgs e )
         {
             // Intentionally suppress the built-in scroll-on-wheel behaviour.
-            // The ImageViewerWindow tunnel handler owns wheel input for zoom + offset.
+            // The ImageViewerView tunnel handler owns wheel input for zoom + offset.
         }
     }
 }

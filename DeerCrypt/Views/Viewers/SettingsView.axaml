@@ -1,0 +1,263 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ic="using:FluentIcons.Avalonia"
+             xmlns:vv="using:DeerCrypt.ViewModels.Viewers"
+             x:Class="DeerCrypt.Views.Viewers.SettingsView"
+             x:DataType="vv:SettingsDocumentViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="Grid.setting">
+            <Setter Property="Margin" Value="18,14" />
+        </Style>
+        <Style Selector="Grid.setting > StackPanel:nth-child(1)">
+            <Setter Property="Spacing" Value="3" />
+            <Setter Property="Margin" Value="0,0,24,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TextBlock.setting-title">
+            <Setter Property="FontWeight" Value="Medium" />
+        </Style>
+        <Style Selector="TextBlock.setting-help">
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="Border.row-divider">
+            <Setter Property="Height" Value="1" />
+            <Setter Property="Background" Value="{DynamicResource HairlineBrush}" />
+            <Setter Property="Margin" Value="18,0" />
+        </Style>
+        <Style Selector="ComboBox.setting">
+            <Setter Property="Width" Value="230" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="StackPanel.section-head">
+            <Setter Property="Orientation" Value="Horizontal" />
+            <Setter Property="Spacing" Value="8" />
+            <Setter Property="Margin" Value="4,0,0,8" />
+        </Style>
+        <Style Selector="StackPanel.section-head > ic|SymbolIcon">
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+        </Style>
+        <Style Selector="StackPanel.section-head > TextBlock">
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Border.keycap">
+            <Setter Property="Background" Value="{DynamicResource SurfaceSunkenBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource HairlineStrongBrush}" />
+            <Setter Property="BorderThickness" Value="1,1,1,2" />
+            <Setter Property="CornerRadius" Value="{DynamicResource RadiusSmall}" />
+            <Setter Property="Padding" Value="7,2" />
+        </Style>
+    </UserControl.Styles>
+
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" Background="{DynamicResource MainBackgroundBrush}">
+        <StackPanel MaxWidth="760" Margin="28,24,28,40" Spacing="28">
+
+            <StackPanel Spacing="4">
+                <TextBlock Text="Settings" FontSize="24" FontWeight="SemiBold" />
+                <TextBlock Classes="secondary"
+                           Text="App settings apply everywhere. Settings under &quot;This vault&quot; are saved inside the vault and travel with it." />
+            </StackPanel>
+
+            <Border Classes="notice-error" IsVisible="{Binding ErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <ic:SymbolIcon Symbol="ErrorCircle" />
+                    <TextBlock Text="{Binding ErrorText}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <!-- ═══ Appearance ═══ -->
+            <StackPanel>
+                <StackPanel Classes="section-head">
+                    <ic:SymbolIcon Symbol="PaintBrush" />
+                    <TextBlock Text="Appearance" />
+                </StackPanel>
+                <Border Classes="card">
+                    <StackPanel>
+                        <Grid Classes="setting" ColumnDefinitions="*,Auto">
+                            <StackPanel>
+                                <TextBlock Classes="setting-title" Text="Theme" />
+                                <TextBlock Classes="setting-help" Text="The accent color follows your system's." />
+                            </StackPanel>
+                            <ComboBox Grid.Column="1" Classes="setting" SelectedIndex="{Binding ThemeIndex}">
+                                <ComboBoxItem Content="Match system" />
+                                <ComboBoxItem Content="Dark" />
+                                <ComboBoxItem Content="Light" />
+                            </ComboBox>
+                        </Grid>
+                        <Border Classes="row-divider" />
+                        <Grid Classes="setting" ColumnDefinitions="*,Auto">
+                            <StackPanel>
+                                <TextBlock Classes="setting-title" Text="Layout density" />
+                                <TextBlock Classes="setting-help" Text="Compact fits more rows and tiles on screen." />
+                            </StackPanel>
+                            <ComboBox Grid.Column="1" Classes="setting" SelectedIndex="{Binding DensityIndex}">
+                                <ComboBoxItem Content="Comfortable" />
+                                <ComboBoxItem Content="Compact" />
+                            </ComboBox>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- ═══ Files ═══ -->
+            <StackPanel>
+                <StackPanel Classes="section-head">
+                    <ic:SymbolIcon Symbol="DocumentMultiple" />
+                    <TextBlock Text="Opening files" />
+                </StackPanel>
+                <Border Classes="card">
+                    <Grid Classes="setting" ColumnDefinitions="*,Auto">
+                        <StackPanel>
+                            <TextBlock Classes="setting-title" Text="Use the built-in viewers" />
+                            <TextBlock Classes="setting-help"
+                                       Text="Images, audio, video, and text open in tabs here and are decrypted only in memory. When off, files are decrypted to a temporary folder and opened in your default apps." />
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" OnContent="" OffContent=""
+                                      IsChecked="{Binding Browser.UseInternalViewer}" />
+                    </Grid>
+                </Border>
+            </StackPanel>
+
+            <!-- ═══ Thumbnails & privacy ═══ -->
+            <StackPanel>
+                <StackPanel Classes="section-head">
+                    <ic:SymbolIcon Symbol="ImageMultiple" />
+                    <TextBlock Text="Thumbnails and privacy" />
+                </StackPanel>
+                <Border Classes="card">
+                    <StackPanel>
+                        <Grid Classes="setting" ColumnDefinitions="*,Auto">
+                            <StackPanel>
+                                <TextBlock Classes="setting-title" Text="Thumbnails in this vault" />
+                                <TextBlock Classes="setting-help"
+                                           Text="Picture previews for images and album art in grid view and the details panel. Blurred thumbnails sharpen only while the pointer is over them." />
+                            </StackPanel>
+                            <ComboBox Grid.Column="1" Classes="setting" SelectedIndex="{Binding VaultThumbnailIndex}">
+                                <ComboBoxItem Content="{Binding FollowDefaultText}" />
+                                <ComboBoxItem Content="Off" />
+                                <ComboBoxItem Content="Blurred until hover" />
+                                <ComboBoxItem Content="On" />
+                            </ComboBox>
+                        </Grid>
+                        <Border Classes="row-divider" />
+                        <Grid Classes="setting" ColumnDefinitions="*,Auto">
+                            <StackPanel>
+                                <TextBlock Classes="setting-title" Text="Default for vaults" />
+                                <TextBlock Classes="setting-help" Text="Used by any vault that hasn't made its own choice." />
+                            </StackPanel>
+                            <ComboBox Grid.Column="1" Classes="setting" SelectedIndex="{Binding DefaultThumbnailIndex}">
+                                <ComboBoxItem Content="Off" />
+                                <ComboBoxItem Content="Blurred until hover" />
+                                <ComboBoxItem Content="On" />
+                            </ComboBox>
+                        </Grid>
+                        <Border Classes="row-divider" />
+                        <Grid Classes="setting" ColumnDefinitions="*,Auto">
+                            <StackPanel>
+                                <TextBlock Classes="setting-title" Text="Hide thumbnails now" />
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Classes="setting-help" VerticalAlignment="Center"
+                                               Text="Hides every thumbnail and preview at once. Shortcut:" />
+                                    <Border Classes="keycap">
+                                        <TextBlock Text="Ctrl+Shift+H" FontSize="11" />
+                                    </Border>
+                                </StackPanel>
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" OnContent="" OffContent=""
+                                          IsChecked="{Binding ThumbnailsHidden}" />
+                        </Grid>
+                        <Border Classes="row-divider" />
+                        <Grid Classes="setting" ColumnDefinitions="*,Auto">
+                            <StackPanel>
+                                <TextBlock Classes="setting-title" Text="Thumbnail cache" />
+                                <TextBlock Classes="setting-help"
+                                           Text="Thumbnails are encrypted and stored inside this vault so they don't have to be made again. When the cache is full, the ones used least recently are removed." />
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+                                    <ProgressBar Value="{Binding CacheUsagePercent}" Maximum="100" Height="6" MinWidth="0"
+                                                 VerticalAlignment="Center" />
+                                    <Button Grid.Column="1" Classes="secondary" Margin="12,0,0,0" Padding="10,4"
+                                            Command="{Binding ClearCacheCommand}" IsEnabled="{Binding HasCache}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <ic:SymbolIcon Symbol="Delete" />
+                                            <TextBlock Text="Clear" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+                                <TextBlock Classes="setting-help" Text="{Binding CacheUsageText}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Top" Spacing="4">
+                                <TextBlock Classes="setting-help" Text="Size limit" />
+                                <ComboBox Classes="setting" SelectedIndex="{Binding CacheLimitIndex}">
+                                    <ComboBoxItem Content="64 MB" />
+                                    <ComboBoxItem Content="128 MB" />
+                                    <ComboBoxItem Content="256 MB" />
+                                    <ComboBoxItem Content="512 MB" />
+                                    <ComboBoxItem Content="1 GB" />
+                                    <ComboBoxItem Content="2 GB" />
+                                </ComboBox>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- ═══ This vault ═══ -->
+            <StackPanel>
+                <StackPanel Classes="section-head">
+                    <ic:SymbolIcon Symbol="ShieldLock" />
+                    <TextBlock Text="This vault" />
+                </StackPanel>
+                <Border Classes="card">
+                    <StackPanel>
+                        <Grid Classes="setting" ColumnDefinitions="*,Auto">
+                            <StackPanel>
+                                <TextBlock Classes="setting-title" Text="{Binding VaultName}" />
+                                <SelectableTextBlock Text="{Binding VaultPath}" FontSize="12" TextWrapping="Wrap"
+                                                     Foreground="{DynamicResource TextSecondaryBrush}" />
+                            </StackPanel>
+                        </Grid>
+                        <Border Classes="row-divider" />
+                        <Grid Classes="setting" ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
+                            <TextBlock Grid.Row="0" Classes="secondary" Text="Contents" Margin="0,0,24,6" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding VaultContentsText}" TextWrapping="Wrap" />
+                            <TextBlock Grid.Row="1" Classes="secondary" Text="Size on disk" Margin="0,0,24,6" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding VaultSizeText}" />
+                            <TextBlock Grid.Row="2" Classes="secondary" Text="Created" Margin="0,0,24,0" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding VaultCreatedText}" />
+                        </Grid>
+                        <Border Classes="row-divider" />
+                        <Grid Classes="setting" ColumnDefinitions="*,Auto">
+                            <StackPanel>
+                                <TextBlock Classes="setting-title" Text="Maintenance" />
+                                <TextBlock Classes="setting-help"
+                                           Text="Compact gives space from deleted files back to the disk. Check integrity confirms every file has all of its encrypted chunks." />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <Button Classes="secondary" Command="{Binding Browser.CompactCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <ic:SymbolIcon Symbol="Broom" />
+                                        <TextBlock Text="Compact…" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="secondary" Command="{Binding Browser.CheckIntegrityCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <ic:SymbolIcon Symbol="ShieldCheckmark" />
+                                        <TextBlock Text="Check integrity…" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <TextBlock Classes="muted" FontSize="12" HorizontalAlignment="Center"
+                       Text="{Binding AppVersion}" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

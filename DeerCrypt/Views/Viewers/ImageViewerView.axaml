@@ -1,0 +1,111 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ic="using:FluentIcons.Avalonia"
+             xmlns:vv="using:DeerCrypt.ViewModels.Viewers"
+             xmlns:gif="using:Avalonia.Labs.Gif"
+             xmlns:local="using:DeerCrypt.Views.Viewers"
+             x:Class="DeerCrypt.Views.Viewers.ImageViewerView"
+             x:DataType="vv:ImageDocumentViewModel"
+             Focusable="True">
+
+    <Grid RowDefinitions="*,Auto">
+
+        <!-- Canvas -->
+        <Panel Grid.Row="0" Background="{DynamicResource SurfaceSunkenBrush}">
+            <StackPanel IsVisible="{Binding IsLoading}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                <ProgressBar IsIndeterminate="True" Classes="meter" Width="140" />
+                <TextBlock Text="Decrypting…" Classes="secondary" HorizontalAlignment="Center" />
+            </StackPanel>
+
+            <StackPanel IsVisible="{Binding ErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                        HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" MaxWidth="420">
+                <ic:SymbolIcon Symbol="ImageOff" FontSize="36" Foreground="{DynamicResource TextMutedBrush}" HorizontalAlignment="Center" />
+                <TextBlock Text="{Binding ErrorText}" Classes="secondary" TextWrapping="Wrap" TextAlignment="Center" />
+            </StackPanel>
+
+            <!-- The container is sized in code to max(image, viewport) so small images stay centred -->
+            <local:ZoomScrollViewer x:Name="Scroll"
+                                    HorizontalScrollBarVisibility="Auto"
+                                    VerticalScrollBarVisibility="Auto"
+                                    IsVisible="{Binding HasContent}">
+                <Grid x:Name="Container" Cursor="Hand" Background="Transparent"
+                      HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <LayoutTransformControl x:Name="Rotator" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                            IsHitTestVisible="False">
+                        <Panel>
+                            <Image x:Name="Img" Source="{Binding Bitmap}" Stretch="Fill"
+                                   IsVisible="{Binding !IsAnimated}"
+                                   RenderOptions.BitmapInterpolationMode="MediumQuality" />
+                            <!-- Source is set from code: GifImage throws when given null -->
+                            <gif:GifImage x:Name="AnimImg" Stretch="Fill" IsVisible="{Binding IsAnimated}" />
+                        </Panel>
+                    </LayoutTransformControl>
+                </Grid>
+            </local:ZoomScrollViewer>
+        </Panel>
+
+        <!-- Controls (bottom, like the media player) -->
+        <Border Grid.Row="1" Classes="divider-top" Background="{DynamicResource ChromeBackgroundBrush}" Padding="10,4">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                    <Button Classes="ghost icon" Command="{Binding PreviousCommand}" ToolTip.Tip="Previous (←)"
+                            IsVisible="{Binding HasSet}">
+                        <ic:SymbolIcon Symbol="ChevronLeft" />
+                    </Button>
+                    <Button Classes="ghost icon" Command="{Binding NextCommand}" ToolTip.Tip="Next (→)"
+                            IsVisible="{Binding HasSet}">
+                        <ic:SymbolIcon Symbol="ChevronRight" />
+                    </Button>
+                    <TextBlock Text="{Binding CountText}" Classes="secondary" FontSize="12"
+                               VerticalAlignment="Center" Margin="8,0,0,0" IsVisible="{Binding HasSet}" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="16,0">
+                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" HorizontalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding InfoText}" Classes="caption" HorizontalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip.Tip="Scroll to zoom · drag to pan · double-click to toggle fit" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                    <Button Classes="ghost icon" x:Name="ZoomOutBtn" ToolTip.Tip="Zoom out (−)">
+                        <ic:SymbolIcon Symbol="ZoomOut" />
+                    </Button>
+                    <Slider Minimum="0" Maximum="100" Width="110" VerticalAlignment="Center" Margin="2,0"
+                            Value="{Binding ZoomSliderValue, Mode=TwoWay}" ToolTip.Tip="Zoom (scroll wheel)" />
+                    <Button Classes="ghost icon" x:Name="ZoomInBtn" ToolTip.Tip="Zoom in (+)">
+                        <ic:SymbolIcon Symbol="ZoomIn" />
+                    </Button>
+                    <TextBlock Text="{Binding ZoomPercent}" Classes="secondary" FontSize="12" Width="42"
+                               TextAlignment="Right" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <Button Classes="ghost icon" x:Name="FitBtn" ToolTip.Tip="Fit to view (0)">
+                        <ic:SymbolIcon Symbol="ZoomFit" />
+                    </Button>
+                    <Button Classes="ghost icon" x:Name="ActualBtn" ToolTip.Tip="Actual size (1)">
+                        <ic:SymbolIcon Symbol="RatioOneToOne" />
+                    </Button>
+                    <Rectangle Width="1" Margin="6,6" Fill="{DynamicResource HairlineStrongBrush}" />
+                    <Button Classes="ghost icon" Command="{Binding RotateLeftCommand}" ToolTip.Tip="Rotate left (Shift+R)">
+                        <ic:SymbolIcon Symbol="ArrowRotateCounterclockwise" />
+                    </Button>
+                    <Button Classes="ghost icon" Command="{Binding RotateRightCommand}" ToolTip.Tip="Rotate right (R)">
+                        <ic:SymbolIcon Symbol="ArrowRotateClockwise" />
+                    </Button>
+                    <Button Classes="ghost icon" Command="{Binding ToggleSlideshowCommand}"
+                            Classes.selected="{Binding IsSlideshowRunning}"
+                            IsVisible="{Binding HasSet}" ToolTip.Tip="Slideshow (S)">
+                        <ic:SymbolIcon Symbol="SlideMultiple" />
+                    </Button>
+                    <Rectangle Width="1" Margin="6,6" Fill="{DynamicResource HairlineStrongBrush}" />
+                    <Button Classes="ghost icon" Click="OnDeleteClicked" ToolTip.Tip="Delete from the vault (Del)">
+                        <ic:SymbolIcon Symbol="Delete" Foreground="{DynamicResource DangerBrush}" />
+                    </Button>
+                    <Button Classes="ghost icon" Click="OnFullscreenClicked" ToolTip.Tip="Full screen (F)">
+                        <ic:SymbolIcon Symbol="FullScreenMaximize" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

@@ -40,6 +40,97 @@ namespace DeerCrypt.Views
             InitializeComponent( );
             WireWelcomeDrop( );
             WireSidebar( );
+            WireTabStrip( );
+            WireColumnResizers( );
+        }
+
+        // List scroll position across reloads 
+
+        private Vector _savedListOffset;
+
+        private ScrollViewer? FileListScroller( ) =>
+            this.FindControl<ListBox>( "FileList" )?.FindDescendantOfType<ScrollViewer>( );
+
+        /// <summary>Thumbnails were switched on or the cache cleared: ask again for the tiles on screen.</summary>
+        private void OnThumbnailsReset( )
+        {
+            if( _currentBrowser is not { EffectiveGridView: true } browser ) return;
+            if( this.FindControl<ListBox>( "FileList" ) is not { } list ) return;
+            foreach( var container in list.GetRealizedContainers( ) )
+                if( container.DataContext is VaultItemViewModel item ) browser.Thumbnails.Request( item );
+        }
+
+        private void OnItemsReplacing( ) => _savedListOffset = FileListScroller( )?.Offset ?? default;
+
+        private void OnItemsReplaced( VaultBrowserViewModel.ListScroll mode, VaultItemViewModel? target )
+        {
+            Dispatcher.UIThread.Post( ( ) =>
+            {
+                var list = this.FindControl<ListBox>( "FileList" );
+                var sv   = FileListScroller( );
+                if( list == null || sv == null ) return;
+
+                switch( mode )
+                {
+                    case VaultBrowserViewModel.ListScroll.Top:  sv.Offset = default; break;
+                    case VaultBrowserViewModel.ListScroll.Keep: sv.Offset = _savedListOffset; break;
+                    case VaultBrowserViewModel.ListScroll.Item when target != null:
+                        sv.Offset = default;
+                        list.ScrollIntoView( target );
+                        break;
+                }
+            }, DispatcherPriority.Loaded );
+        }
+
+        // Document tabs 
+
+        private void WireColumnResizers( )
+        {
+            AddHandler( Avalonia.Controls.Primitives.Thumb.DragDeltaEvent, ( _, e ) =>
+            {
+                if( e.Source is Avalonia.Controls.Primitives.Thumb { Tag: string column } && _currentBrowser is { } b )
+                {
+                    b.ResizeColumn( column, e.Vector.X );
+                    e.Handled = true;
+                }
+            } );
+            AddHandler( Avalonia.Controls.Primitives.Thumb.DragCompletedEvent, ( _, e ) =>
+            {
+                if( e.Source is Avalonia.Controls.Primitives.Thumb { Tag: string } ) _currentBrowser?.SaveColumnWidths( );
+            } );
+        }
+
+        private void WireTabStrip( )
+        {
+            // Middle-click closes a tab
+            this.FindControl<StackPanel>( "TabStrip" )?.AddHandler( PointerReleasedEvent, ( _, e ) =>
+            {
+                if( e.InitialPressMouseButton != MouseButton.Middle || _currentBrowser is not { } browser ) return;
+                for( var c = e.Source as Control; c != null; c = c.Parent as Control )
+                {
+                    if( c.DataContext is ViewModels.Viewers.DocumentViewModel doc )
+                    {
+                        browser.CloseDocumentCommand.Execute( doc );
+                        e.Handled = true;
+                        return;
+                    }
+                }
+            }, RoutingStrategies.Tunnel );
+        }
+
+        private void OnTabMenuClick( object? sender, RoutedEventArgs e )
+        {
+            if( sender is not MenuItem { Tag: string action, DataContext: ViewModels.Viewers.DocumentViewModel doc }
+                || _currentBrowser is not { } browser ) return;
+
+            switch( action )
+            {
+                case "popout": browser.PopOutDocumentCommand.Execute( doc ); break;
+                case "reveal": browser.RevealDocumentFileCommand.Execute( doc ); break;
+                case "close":  browser.CloseDocumentCommand.Execute( doc ); break;
+                case "others": browser.CloseOtherDocumentsCommand.Execute( doc ); break;
+                case "all":    browser.CloseAllDocumentsCommand.Execute( null ); break;
+            }
         }
 
         // Keyboard: search focus 
@@ -250,7 +341,16 @@ namespace DeerCrypt.Views
                 vm.VaultBrowser.OwnerWindow = this;
                 // Update the reference used by all already-wired handlers, then
                 // wire the file list controls exactly once on the first open.
+                if( _currentBrowser != null )
+                {
+                    _currentBrowser.ItemsReplacing -= OnItemsReplacing;
+                    _currentBrowser.ItemsReplaced  -= OnItemsReplaced;
+                    _currentBrowser.ThumbnailsReset -= OnThumbnailsReset;
+                }
                 _currentBrowser = vm.VaultBrowser;
+                _currentBrowser.ItemsReplacing += OnItemsReplacing;
+                _currentBrowser.ItemsReplaced  += OnItemsReplaced;
+                _currentBrowser.ThumbnailsReset += OnThumbnailsReset;
                 WireFileList( );
 
                 // FocusRenameBox must be re-assigned for each new VM instance.
@@ -285,6 +385,18 @@ namespace DeerCrypt.Views
 
             var list = this.FindControl<ListBox>("FileList");
             if( list == null ) return;
+
+            // Thumbnails for grid tiles as they scroll into view; dropped again as they leave
+            list.ContainerPrepared += ( _, e ) =>
+            {
+                if( _currentBrowser is { EffectiveGridView: true } browser && e.Container.DataContext is VaultItemViewModel item )
+                    browser.Thumbnails.Request( item );
+            };
+            list.ContainerClearing += ( _, e ) =>
+            {
+                if( _currentBrowser is { } browser && e.Container.DataContext is VaultItemViewModel item )
+                    browser.Thumbnails.Cancel( item );
+            };
 
             // Double-click to navigate into directories (or ".." to go up)
             list.DoubleTapped += async ( _, _ ) =>
@@ -339,10 +451,9 @@ namespace DeerCrypt.Views
             list.SelectionChanged += ( _, _ ) =>
             {
                 if( _currentBrowser is not { } browser ) return;
-                browser.SelectedItems.Clear( );
-                foreach( var item in list.SelectedItems!.OfType<VaultItemViewModel>( ) )
-                    browser.SelectedItems.Add( item );
-                browser.SelectedFile = list.SelectedItem as VaultItemViewModel;
+                browser.ReplaceSelection(
+                    list.SelectedItems!.OfType<VaultItemViewModel>( ),
+                    list.SelectedItem as VaultItemViewModel );
             };
 
             // Tunnel-phase: intercept before ListBox's OnPointerPressed changes selection.

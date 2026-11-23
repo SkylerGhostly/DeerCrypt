@@ -13,6 +13,13 @@ namespace DeerCrypt.ViewModels.Dialogs
         public string Detail { get; init; } = string.Empty;
         public string ConfirmText { get; init; } = "OK";
         public string CancelText { get; init; } = "Cancel";
+
+        /// <summary>
+        /// Optional third choice (e.g. "Don't save"). When set, the dialog returns true for
+        /// confirm, false for this button, and null for cancel or closing the window.
+        /// </summary>
+        public string DiscardText { get; init; } = string.Empty;
+        public bool HasDiscard => !string.IsNullOrEmpty( DiscardText );
         public DialogTone Tone { get; init; } = DialogTone.Neutral;
 
         public Symbol Icon => Tone switch
