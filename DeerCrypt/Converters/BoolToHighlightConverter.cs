@@ -12,7 +12,7 @@ namespace DeerCrypt.Converters
         public object? Convert( object? value, Type targetType, object? parameter, CultureInfo culture )
         {
             return value is true
-                ? new SolidColorBrush( Color.FromArgb( 60, 91, 155, 213 ) )
+                ? DropTargetBrushProvider.Get( )
                 : null;
         }
 

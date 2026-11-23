@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:DeerCrypt.ViewModels.Dialogs"
         x:Class="DeerCrypt.Views.Dialogs.InputDialog"
@@ -20,7 +20,7 @@
                  x:Name="InputBox" />
 
         <TextBlock Text="{Binding ErrorMessage}"
-                   Foreground="#E05252"
+                   Foreground="{DynamicResource DangerBrush}"
                    FontSize="12"
                    IsVisible="{Binding ErrorMessage,
                        Converter={x:Static StringConverters.IsNotNullOrEmpty}}"

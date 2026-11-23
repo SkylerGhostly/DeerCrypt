@@ -4,7 +4,7 @@
         x:Class="DeerCrypt.Views.Dialogs.CompactDialog"
         x:DataType="vm:CompactDialogViewModel"
         Background="{DynamicResource MainBackgroundBrush}"
-        Title="Compact Vault"
+        Title="Compact vault"
         Width="400"
         SizeToContent="Height"
         CanResize="False"
@@ -38,7 +38,7 @@
             <Button Content="Cancel"
                     Click="OnCancelClicked"
                     IsVisible="{Binding !IsCompacting}" />
-            <Button Content="Compact Now"
+            <Button Content="Compact now"
                     Command="{Binding CompactCommand}"
                     Classes="accent"
                     IsDefault="True"

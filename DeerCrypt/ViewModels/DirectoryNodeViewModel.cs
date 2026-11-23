@@ -15,6 +15,10 @@ namespace DeerCrypt.ViewModels
 
         [ObservableProperty]
         public partial bool IsExpanded { get; set; }
+
+        /// <summary>True while files or vault items are dragged over this folder in the sidebar.</summary>
+        [ObservableProperty]
+        public partial bool IsDropTarget { get; set; }
         public bool IsRoot { get; } = isRoot;
 
         public ObservableCollection<DirectoryNodeViewModel> Children { get; } = [ ];

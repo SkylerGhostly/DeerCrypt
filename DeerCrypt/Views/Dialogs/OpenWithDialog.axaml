@@ -1,8 +1,9 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ic="using:FluentIcons.Avalonia"
         x:Class="DeerCrypt.Views.Dialogs.OpenWithDialog"
         Background="{DynamicResource MainBackgroundBrush}"
-        Title="Open With"
+        Title="Open with"
         Width="360"
         SizeToContent="Height"
         CanResize="False"
@@ -27,8 +28,8 @@
                     Padding="0,10"
                     Click="OnMediaPlayerClicked">
                 <StackPanel Spacing="4">
-                    <TextBlock Text="🎵" FontSize="18" HorizontalAlignment="Center" />
-                    <TextBlock Text="Media Player" FontSize="12" HorizontalAlignment="Center" />
+                    <ic:SymbolIcon Symbol="MusicNote2" FontSize="22" HorizontalAlignment="Center" />
+                    <TextBlock Text="Media player" FontSize="12" HorizontalAlignment="Center" />
                 </StackPanel>
             </Button>
 
@@ -38,8 +39,8 @@
                     Padding="0,10"
                     Click="OnImageViewerClicked">
                 <StackPanel Spacing="4">
-                    <TextBlock Text="🖼" FontSize="18" HorizontalAlignment="Center" />
-                    <TextBlock Text="Image Viewer" FontSize="12" HorizontalAlignment="Center" />
+                    <ic:SymbolIcon Symbol="Image" FontSize="22" HorizontalAlignment="Center" />
+                    <TextBlock Text="Image viewer" FontSize="12" HorizontalAlignment="Center" />
                 </StackPanel>
             </Button>
 
@@ -49,8 +50,8 @@
                     Padding="0,10"
                     Click="OnTextEditorClicked">
                 <StackPanel Spacing="4">
-                    <TextBlock Text="📄" FontSize="18" HorizontalAlignment="Center" />
-                    <TextBlock Text="Text Editor" FontSize="12" HorizontalAlignment="Center" />
+                    <ic:SymbolIcon Symbol="DocumentText" FontSize="22" HorizontalAlignment="Center" />
+                    <TextBlock Text="Text editor" FontSize="12" HorizontalAlignment="Center" />
                 </StackPanel>
             </Button>
 
@@ -60,8 +61,8 @@
                     Padding="0,10"
                     Click="OnExternalClicked">
                 <StackPanel Spacing="4">
-                    <TextBlock Text="↗" FontSize="20" HorizontalAlignment="Center" />
-                    <TextBlock Text="Open Externally" FontSize="12" HorizontalAlignment="Center" />
+                    <ic:SymbolIcon Symbol="Open" FontSize="22" HorizontalAlignment="Center" />
+                    <TextBlock Text="Open externally" FontSize="12" HorizontalAlignment="Center" />
                 </StackPanel>
             </Button>
 

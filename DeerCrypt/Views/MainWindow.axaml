@@ -1,475 +1,737 @@
-﻿    <Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:DeerCrypt.ViewModels"
         xmlns:converters="using:DeerCrypt.Converters"
-        xmlns:system="using:System"
-        xmlns:vault="using:DeerCryptLib.Vault"
         xmlns:svc="using:DeerCrypt.Services"
+        xmlns:ic="using:FluentIcons.Avalonia"
         x:Class="DeerCrypt.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Title="{Binding WindowTitle}"
-        Background="{DynamicResource MainBackgroundBrush}"
-        Width="1100"
-        Height="650"
-        MinWidth="800"
-        MinHeight="500">
-
-    <Window.Styles>
-        <!-- ToggleButton in the toolbar: clear highlight when checked -->
-        <Style Selector="ToggleButton.toolbar-toggle">
-            <Setter Property="BorderThickness"  Value="1" />
-            <Setter Property="Background"       Value="Transparent"/>
-            <Setter Property="BorderBrush"      Value="Transparent" />
-            <Setter Property="CornerRadius"     Value="4" />
-        </Style>
-    </Window.Styles>
+        Background="{DynamicResource AppBackgroundBrush}"
+        Width="1180"
+        Height="720"
+        MinWidth="820"
+        MinHeight="520">
 
     <Design.DataContext>
         <vm:MainViewModel IsVaultOpen="False" />
     </Design.DataContext>
 
-    <Grid RowDefinitions="Auto,*">
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+L"       Command="{Binding LockVaultCommand}" />
+        <KeyBinding Gesture="F2"           Command="{Binding VaultBrowser.RenameCommand}" />
+        <KeyBinding Gesture="Delete"       Command="{Binding VaultBrowser.DeleteCommand}" />
+        <KeyBinding Gesture="Alt+Left"     Command="{Binding VaultBrowser.NavigateBackCommand}" />
+        <KeyBinding Gesture="Alt+Right"    Command="{Binding VaultBrowser.NavigateForwardCommand}" />
+        <KeyBinding Gesture="Alt+Up"       Command="{Binding VaultBrowser.NavigateUpCommand}" />
+        <KeyBinding Gesture="Ctrl+Shift+N" Command="{Binding VaultBrowser.NewFolderCommand}" />
+        <KeyBinding Gesture="Ctrl+O"       Command="{Binding VaultBrowser.AddFilesCommand}" />
+        <KeyBinding Gesture="Ctrl+D1"      Command="{Binding VaultBrowser.SetViewModeCommand}" CommandParameter="List" />
+        <KeyBinding Gesture="Ctrl+D2"      Command="{Binding VaultBrowser.SetViewModeCommand}" CommandParameter="Grid" />
+    </Window.KeyBindings>
 
-        <!-- Menu bar -->
-        <Menu Grid.Row="0">
-            <MenuItem Header="_Vault">
-                <MenuItem Header="_New Vault"  Command="{Binding NewVaultCommand}" />
-                <MenuItem Header="_Open Vault" Command="{Binding OpenVaultCommand}" />
-                <Separator />
-                <MenuItem Header="_Close Vault"
-                          Command="{Binding CloseVaultCommand}"
-                          IsEnabled="{Binding IsVaultOpen}" />
-            </MenuItem>
-            <MenuItem Header="_Add"
-                      IsVisible="{Binding IsVaultOpen}">
-                <MenuItem Header="Add _Files..."
-                          Command="{Binding VaultBrowser.AddFilesCommand}" />
-                <MenuItem Header="Add F_older..."
-                          Command="{Binding VaultBrowser.AddFolderCommand}" />
-            </MenuItem>
-            <MenuItem Header="_Tools"
-                      IsVisible="{Binding IsVaultOpen}">
-                <MenuItem Header="_Compact Vault"
-                          Command="{Binding VaultBrowser.CompactCommand}" />
-                <MenuItem Header="Check _Integrity"
-                          Command="{Binding VaultBrowser.CheckIntegrityCommand}" />
-            </MenuItem>
-        </Menu>
+    <Window.Styles>
 
-        <Grid Grid.Row="1">
+        <!-- List rows -->
+        <Style Selector="ListBox#FileList">
+            <Setter Property="ItemTemplate">
+                <DataTemplate x:DataType="vm:VaultItemViewModel">
+                    <Grid ColumnDefinitions="30,*,150,90,140"
+                          Margin="{DynamicResource ListRowPadding}"
+                          Background="Transparent">
 
-            <!-- No vault open - empty state -->
-            <Grid IsVisible="{Binding !IsVaultOpen}">
-                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
-                                MaxWidth="420"
-                                Margin="32,40,32,40"
-                                Spacing="0">
+                        <!-- Icon, with a small lock badge while the file is open externally -->
+                        <Panel Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Left">
+                            <ic:SymbolIcon Symbol="{Binding Icon}"
+                                           IconVariant="Filled"
+                                           FontSize="18"
+                                           Foreground="{Binding IconBrush}" />
+                            <Border IsVisible="{Binding IsCheckedOut}"
+                                    Background="{DynamicResource AppBackgroundBrush}"
+                                    CornerRadius="6"
+                                    Width="12" Height="12"
+                                    Margin="10,10,-4,-4"
+                                    ToolTip.Tip="Open in another app">
+                                <ic:SymbolIcon Symbol="LockClosed" FontSize="10"
+                                               Foreground="{DynamicResource WarningBrush}" />
+                            </Border>
+                        </Panel>
 
-                        <!-- Icon + title -->
-                        <TextBlock Text="🔐"
-                                   FontSize="52"
-                                   HorizontalAlignment="Center" />
-                        <TextBlock Text="No vault open"
-                                   FontSize="22"
-                                   FontWeight="SemiBold"
-                                   HorizontalAlignment="Center"
-                                   Opacity="0.7"
-                                   Margin="0,8,0,0" />
-                        <TextBlock Text="Create a new vault or open an existing one to get started."
-                                   FontSize="13"
-                                   HorizontalAlignment="Center"
-                                   Opacity="0.4"
-                                   TextWrapping="Wrap"
-                                   TextAlignment="Center"
-                                   Margin="0,6,0,0" />
-
-                        <!-- Action buttons -->
-                        <StackPanel Orientation="Horizontal"
-                                    Spacing="8"
-                                    HorizontalAlignment="Center"
-                                    Margin="0,18,0,0">
-                            <Button Content="New Vault"
-                                    Command="{Binding NewVaultCommand}"
-                                    Classes="accent"
-                                    Padding="16,7" />
-                            <Button Content="Open Vault"
-                                    Command="{Binding OpenVaultCommand}"
-                                    Padding="16,7" />
+                        <!-- Name (or inline rename box) -->
+                        <StackPanel Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Spacing="1"
+                                    IsVisible="{Binding !IsRenaming}">
+                            <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding SubText}"
+                                       Classes="caption"
+                                       TextTrimming="CharacterEllipsis"
+                                       IsVisible="{Binding HasSubText}" />
                         </StackPanel>
+                        <TextBox Grid.Column="1"
+                                 Text="{Binding EditingName}"
+                                 IsVisible="{Binding IsRenaming}"
+                                 Padding="4,2"
+                                 MinHeight="26"
+                                 VerticalAlignment="Center"
+                                 GotFocus="OnRenameBoxGotFocus"
+                                 LostFocus="OnRenameBoxLostFocus" />
 
-                        <!-- Recent vaults section -->
-                        <StackPanel IsVisible="{Binding HasRecentVaults}"
-                                    Margin="0,32,0,0"
-                                    Spacing="0">
+                        <TextBlock Grid.Column="2" Text="{Binding TypeText}" Classes="secondary"
+                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="12,0,0,0" />
+                        <TextBlock Grid.Column="3" Text="{Binding SizeText}" Classes="secondary"
+                                   VerticalAlignment="Center" HorizontalAlignment="Right" />
+                        <TextBlock Grid.Column="4" Text="{Binding DateText}" Classes="secondary"
+                                   VerticalAlignment="Center" HorizontalAlignment="Right" />
 
-                            <TextBlock Text="RECENT VAULTS"
-                                       FontSize="10"
-                                       FontWeight="SemiBold"
-                                       Opacity="0.4"
-                                       LetterSpacing="1"
-                                       Margin="0,0,0,8" />
+                        <!-- Drop-target highlight -->
+                        <Border Grid.Column="0" Grid.ColumnSpan="5"
+                                Margin="-6,-4"
+                                CornerRadius="{StaticResource RadiusSmall}"
+                                BorderThickness="1.5"
+                                BorderBrush="{DynamicResource AccentBrush}"
+                                Background="{DynamicResource DropTargetBrush}"
+                                IsVisible="{Binding IsDragTarget}"
+                                IsHitTestVisible="False" />
+                    </Grid>
+                </DataTemplate>
+            </Setter>
+        </Style>
 
+        <!-- Grid tiles -->
+        <Style Selector="ListBox#FileList.grid">
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="ItemsPanel">
+                <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+            </Setter>
+            <Setter Property="ItemTemplate">
+                <DataTemplate x:DataType="vm:VaultItemViewModel">
+                    <Panel Width="{DynamicResource GridTileWidth}"
+                           Height="{DynamicResource GridTileHeight}"
+                           Background="Transparent"
+                           ToolTip.Tip="{Binding DisplayName}">
+                        <StackPanel VerticalAlignment="Center" Spacing="6" Margin="8">
+                            <Panel HorizontalAlignment="Center">
+                                <ic:SymbolIcon Symbol="{Binding Icon}"
+                                               IconVariant="Filled"
+                                               FontSize="44"
+                                               Foreground="{Binding IconBrush}" />
+                                <Border IsVisible="{Binding IsCheckedOut}"
+                                        Background="{DynamicResource AppBackgroundBrush}"
+                                        CornerRadius="8" Width="16" Height="16"
+                                        HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                        Margin="0,0,-4,-2">
+                                    <ic:SymbolIcon Symbol="LockClosed" FontSize="12"
+                                                   Foreground="{DynamicResource WarningBrush}" />
+                                </Border>
+                            </Panel>
+                            <TextBlock Text="{Binding DisplayName}"
+                                       IsVisible="{Binding !IsRenaming}"
+                                       FontSize="12"
+                                       TextAlignment="Center"
+                                       TextWrapping="Wrap"
+                                       MaxLines="2"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBox Text="{Binding EditingName}"
+                                     IsVisible="{Binding IsRenaming}"
+                                     FontSize="12"
+                                     Padding="4,2"
+                                     MinHeight="24"
+                                     GotFocus="OnRenameBoxGotFocus"
+                                     LostFocus="OnRenameBoxLostFocus" />
+                            <TextBlock Text="{Binding TileDetailText}"
+                                       Classes="caption"
+                                       TextAlignment="Center"
+                                       IsVisible="{Binding !IsRenaming}" />
+                        </StackPanel>
+                        <Border CornerRadius="{StaticResource RadiusSmall}"
+                                BorderThickness="1.5"
+                                BorderBrush="{DynamicResource AccentBrush}"
+                                Background="{DynamicResource DropTargetBrush}"
+                                IsVisible="{Binding IsDragTarget}"
+                                IsHitTestVisible="False" />
+                    </Panel>
+                </DataTemplate>
+            </Setter>
+        </Style>
+
+        <!-- Keep folder tree expansion in sync with the view model -->
+        <Style Selector="TreeView#FolderTree TreeViewItem" x:DataType="vm:DirectoryNodeViewModel">
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+        </Style>
+
+        <!-- Segmented list/grid switch -->
+        <Style Selector="Border.segmented Button.selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        </Style>
+    </Window.Styles>
+
+    <Panel>
+
+        <!-- ═══════════════ Welcome / no vault open ═══════════════ -->
+        <Panel x:Name="WelcomeRoot"
+               IsVisible="{Binding !IsVaultOpen}"
+               Background="{DynamicResource AppBackgroundBrush}"
+               DragDrop.AllowDrop="True">
+
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                <StackPanel HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Width="460"
+                            Margin="32,48">
+
+                    <Border Width="68" Height="68"
+                            CornerRadius="18"
+                            Background="{DynamicResource SelectedBrush}"
+                            HorizontalAlignment="Center">
+                        <ic:SymbolIcon Symbol="ShieldLock" FontSize="34"
+                                       Foreground="{DynamicResource AccentBrush}" />
+                    </Border>
+
+                    <TextBlock Text="DeerCrypt"
+                               FontSize="26"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Center"
+                               Margin="0,18,0,0" />
+                    <TextBlock Text="Encrypted vaults for your files."
+                               Classes="secondary"
+                               HorizontalAlignment="Center"
+                               Margin="0,6,0,0" />
+                    <TextBlock Text="Nothing leaves a vault unless you extract it."
+                               Classes="muted"
+                               FontSize="12.5"
+                               HorizontalAlignment="Center"
+                               Margin="0,2,0,0" />
+
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Center"
+                                Spacing="8"
+                                Margin="0,24,0,0">
+                        <Button Classes="primary" Command="{Binding NewVaultCommand}" Padding="16,8">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <ic:SymbolIcon Symbol="Add" />
+                                <TextBlock Text="Create vault" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="secondary" Command="{Binding OpenVaultCommand}" Padding="16,8">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <ic:SymbolIcon Symbol="FolderOpen" />
+                                <TextBlock Text="Open vault" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- Recent vaults -->
+                    <StackPanel IsVisible="{Binding HasRecentVaults}" Margin="0,36,0,0">
+                        <TextBlock Text="Recent vaults" Classes="section" Margin="2,0,0,8" />
+                        <Border Classes="card" Padding="4">
                             <ItemsControl ItemsSource="{Binding RecentVaults}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="svc:RecentVaultEntry">
-                                        <Grid ColumnDefinitions="*,Auto"
-                                              Margin="0,0,0,2">
-
-                                            <!-- Main click target -->
+                                        <Grid ColumnDefinitions="*,Auto">
                                             <Button Grid.Column="0"
-                                                    Command="{Binding $parent[Window].DataContext.OpenRecentCommand}"
-                                                    CommandParameter="{Binding Path}"
-                                                    Background="Transparent"
-                                                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
-                                                    BorderThickness="1"
+                                                    Classes="ghost"
                                                     Padding="10,8"
                                                     HorizontalAlignment="Stretch"
-                                                    HorizontalContentAlignment="Left">
-                                                <StackPanel Spacing="1">
-                                                    <TextBlock Text="{Binding Name}"
-                                                               FontWeight="SemiBold"
-                                                               FontSize="13" />
-                                                    <TextBlock Text="{Binding Path}"
-                                                               FontSize="11"
-                                                               Opacity="0.45"
-                                                               TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock Text="{Binding LastOpened, StringFormat={}{0:yyyy-MM-dd HH:mm}}"
-                                                               FontSize="11"
-                                                               Opacity="0.35" />
-                                                </StackPanel>
+                                                    HorizontalContentAlignment="Stretch"
+                                                    Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).OpenRecentCommand}"
+                                                    CommandParameter="{Binding Path}">
+                                                <Grid ColumnDefinitions="Auto,*,Auto">
+                                                    <Border Grid.Column="0" Width="32" Height="32"
+                                                            CornerRadius="8"
+                                                            Background="{DynamicResource SurfaceSunkenBrush}"
+                                                            Margin="0,0,12,0">
+                                                        <ic:SymbolIcon Symbol="LockClosed"
+                                                                       Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                                                        <TextBlock Text="{Binding Name}"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding Path}"
+                                                                   Classes="caption"
+                                                                   TextTrimming="PrefixCharacterEllipsis" />
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="2"
+                                                               Text="{Binding LastOpened, StringFormat='{}{0:MMM d, yyyy}'}"
+                                                               Classes="caption"
+                                                               VerticalAlignment="Center"
+                                                               Margin="12,0,0,0" />
+                                                </Grid>
                                             </Button>
-
-                                            <!-- Remove button -->
                                             <Button Grid.Column="1"
-                                                    Command="{Binding $parent[Window].DataContext.RemoveRecentCommand}"
-                                                    CommandParameter="{Binding Path}"
-                                                    Content="✕"
-                                                    Background="Transparent"
-                                                    BorderThickness="0"
-                                                    Padding="8,0"
-                                                    FontSize="11"
-                                                    Opacity="0.4"
+                                                    Classes="ghost icon"
                                                     VerticalAlignment="Center"
-                                                    ToolTip.Tip="Remove from list" />
+                                                    Margin="2,0,4,0"
+                                                    ToolTip.Tip="Remove from list"
+                                                    Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).RemoveRecentCommand}"
+                                                    CommandParameter="{Binding Path}">
+                                                <ic:SymbolIcon Symbol="Dismiss" FontSize="14" />
+                                            </Button>
                                         </Grid>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                        </StackPanel>
-
+                        </Border>
                     </StackPanel>
-                </ScrollViewer>
-            </Grid>
 
-            <!-- Vault browser -->
-            <Grid IsVisible="{Binding $parent[Window].DataContext.IsVaultOpen}"
-                  RowDefinitions="Auto,Auto,Auto,*,Auto"
-                  DataContext="{Binding VaultBrowser}">
+                    <TextBlock Text="You can also drop a .dcv vault file here to open it."
+                               Classes="caption"
+                               HorizontalAlignment="Center"
+                               Margin="0,18,0,0" />
+                </StackPanel>
+            </ScrollViewer>
 
-                <!-- Toolbar -->
-                <Border Grid.Row="0"
-                        BorderBrush="{DynamicResource SeparatorBrush}"
-                        BorderThickness="0,0,0,1"
-                        Padding="6,5">
-                    <Grid ColumnDefinitions="Auto,*">
-                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
-                            <Button Content="Add Files"
-                                    Command="{Binding AddFilesCommand}"
-                                    Classes="accent"
-                                    Padding="12,4" />
-                            <Button Content="Add Folder"
-                                    Command="{Binding AddFolderCommand}"
-                                    Padding="12,4" />
-                            <Rectangle Width="1"
-                                       Margin="4,4"
-                                       Fill="{DynamicResource SeparatorBrush}"
-                                       VerticalAlignment="Stretch" />
-                            <Button Content="New Folder"
-                                    Command="{Binding NewFolderCommand}"
-                                    Padding="12,4" />
-                            <Button Content="Move"
-                                    Command="{Binding MoveCommand}"
-                                    Padding="12,4" />
-                            <Rectangle Width="1"
-                                       Margin="4,4"
-                                       Fill="{DynamicResource SeparatorBrush}"
-                                       VerticalAlignment="Stretch" />
-                            <ToggleButton Classes="toolbar-toggle"
-                                         IsChecked="{Binding UseInternalViewer, Mode=TwoWay}"
-                                         Padding="10,3"
-                                         ToolTip.Tip="When on, compatible media files open in the built-in player (on-the-fly decryption). When off, all files are extracted to a temp folder and opened externally.">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <TextBlock Text="🎬" FontSize="12" VerticalAlignment="Center" />
-                                    <TextBlock Text="Internal Viewer" VerticalAlignment="Center" />
-                                </StackPanel>
-                            </ToggleButton>
+            <!-- Shown while a vault file is dragged over the window -->
+            <Border x:Name="WelcomeDropOverlay"
+                    IsVisible="False"
+                    IsHitTestVisible="False"
+                    Margin="16"
+                    CornerRadius="{StaticResource RadiusLarge}"
+                    BorderThickness="2"
+                    BorderBrush="{DynamicResource AccentBrush}"
+                    Background="{DynamicResource DropTargetBrush}">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                    <ic:SymbolIcon Symbol="ShieldLock" FontSize="36" Foreground="{DynamicResource AccentBrush}" />
+                    <TextBlock Text="Drop to open this vault" FontSize="15" FontWeight="SemiBold" />
+                </StackPanel>
+            </Border>
+        </Panel>
+
+        <!-- ═══════════════ Vault open ═══════════════ -->
+        <Grid IsVisible="{Binding IsVaultOpen}" RowDefinitions="Auto,*">
+
+            <!-- Header -->
+            <Border Grid.Row="0"
+                    Classes="divider-bottom"
+                    Background="{DynamicResource ChromeBackgroundBrush}"
+                    Padding="12,8">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+
+                    <!-- Vault identity -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                        <Border Width="28" Height="28" CornerRadius="7"
+                                Background="{DynamicResource SelectedBrush}">
+                            <ic:SymbolIcon Symbol="ShieldLock" FontSize="16"
+                                           Foreground="{DynamicResource AccentBrush}" />
+                        </Border>
+                        <StackPanel VerticalAlignment="Center" Spacing="0">
+                            <TextBlock Text="{Binding VaultName}" FontWeight="SemiBold"
+                                       MaxWidth="220" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="Unlocked" Classes="caption" FontSize="11" />
                         </StackPanel>
+                    </StackPanel>
 
-                        <!-- Search box -->
-                        <Grid Grid.Column="1"
-                              HorizontalAlignment="Right"
-                              VerticalAlignment="Center"
-                              Width="220">
-                            <TextBox Text="{Binding SearchText}"
-                                     Watermark="Search vault…"
-                                     Padding="8,0,26,0"
-                                     VerticalContentAlignment="Center" />
-                            <Button Content="✕"
-                                    Command="{Binding ClearSearchCommand}"
-                                    IsVisible="{Binding IsSearchActive}"
-                                    Background="Transparent"
-                                    BorderThickness="0"
-                                    Padding="0"
-                                    Width="22"
-                                    FontSize="10"
-                                    Opacity="0.5"
-                                    HorizontalAlignment="Right"
-                                    VerticalAlignment="Center"
-                                    Margin="0,0,4,0"
-                                    ToolTip.Tip="Clear search" />
-                        </Grid>
-                    </Grid>
-                </Border>
-
-                <!-- Navigation bar - back/forward + breadcrumb -->
-                <Border Grid.Row="1"
-                        x:Name="NavBar"
-                        BorderBrush="{DynamicResource SeparatorBrush}"
-                        BorderThickness="0,0,0,1"
-                        Padding="4,3"
-                        DragDrop.AllowDrop="True">
-                    <Grid ColumnDefinitions="Auto,Auto,*">
-
-                        <Button Grid.Column="0"
-                                Content="←"
-                                Command="{Binding NavigateBackCommand}"
-                                Width="28" Height="28"
-                                Padding="0"
-                                Margin="0,0,2,0"
-                                FontSize="14" />
-
-                        <Button Grid.Column="1"
-                                Content="→"
-                                Command="{Binding NavigateForwardCommand}"
-                                Width="28" Height="28"
-                                Padding="0"
-                                Margin="0,0,8,0"
-                                FontSize="14" />
-
-                        <!-- Breadcrumb -->
-                        <ItemsControl Grid.Column="2"
-                                      ItemsSource="{Binding Breadcrumb}"
-                                      VerticalAlignment="Center">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <StackPanel Orientation="Horizontal" />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:BreadcrumbSegment">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Button Content="{Binding Name}"
-                                                Command="{Binding $parent[ItemsControl].DataContext.NavigateToBreadcrumbCommand}"
-                                                CommandParameter="{Binding}"
-                                                Padding="4,2"
-                                                BorderThickness="0">
-                                            <Button.Background>
-                                                <MultiBinding Converter="{x:Static converters:EqualsToBrushConverter.Instance}">
-                                                    <Binding Path="DirectoryId"/>
-                                                    <Binding Path="$parent[ItemsControl].DataContext.BreadcrumbDragTargetId"/>
-                                                </MultiBinding>
-                                            </Button.Background>
-                                        </Button>
-                                        <TextBlock Text="/"
-                                                   VerticalAlignment="Center"
-                                                   Margin="2,0"
-                                                   Opacity="0.35" />
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </Grid>
-                </Border>
-
-                <!-- Column headers -->
-                <Border Grid.Row="2"
-                        BorderBrush="{DynamicResource SeparatorBrush}"
-                        BorderThickness="0,0,0,1">
-                    <Grid ColumnDefinitions="20,28,*,140,100,150"
-                          Margin="8,0,8,0">
-                        <Button Grid.Column="2"
-                                Content="{Binding NameHeaderText}"
-                                Command="{Binding SortByCommand}"
-                                CommandParameter="Name"
-                                Background="Transparent"
-                                BorderThickness="0"
-                                Padding="0"
-                                HorizontalAlignment="Stretch"
-                                HorizontalContentAlignment="Left"
-                                Classes="columnHeader" />
-                        <Button Grid.Column="3"
-                                Content="{Binding TypeHeaderText}"
-                                Command="{Binding SortByCommand}"
-                                CommandParameter="Type"
-                                Background="Transparent"
-                                BorderThickness="0"
-                                Padding="0"
-                                HorizontalAlignment="Stretch"
-                                HorizontalContentAlignment="Left"
-                                Classes="columnHeader" />
-                        <Button Grid.Column="4"
-                                Content="{Binding SizeHeaderText}"
-                                Command="{Binding SortByCommand}"
-                                CommandParameter="Size"
-                                Background="Transparent"
-                                BorderThickness="0"
-                                Padding="0"
-                                HorizontalAlignment="Stretch"
-                                HorizontalContentAlignment="Right"
-                                Classes="columnHeader" />
-                        <Button Grid.Column="5"
-                                Content="{Binding DateHeaderText}"
-                                Command="{Binding SortByCommand}"
-                                CommandParameter="Date"
-                                Background="Transparent"
-                                BorderThickness="0"
-                                Padding="0"
-                                HorizontalAlignment="Stretch"
-                                HorizontalContentAlignment="Right"
-                                Classes="columnHeader"
-                                Margin="8,5,0,5" />
-                    </Grid>
-                </Border>
-
-                <!-- File listing -->
-                <ListBox Grid.Row="3"
-                         x:Name="FileList"
-                         ItemsSource="{Binding CurrentItems}"
-                         SelectedItem="{Binding SelectedFile}"
-                         SelectionMode="Multiple">
-                    <ListBox.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem Header="Extract"
-                                      Command="{Binding ExtractCommand}" />
-                            <MenuItem Header="Move"
-                                      Command="{Binding MoveCommand}" />
-                            <MenuItem Header="Rename"
-                                      Command="{Binding RenameCommand}" />
-                            <MenuItem Header="Delete"
-                                      Command="{Binding DeleteCommand}" />
-                            <Separator />
-                            <MenuItem Header="New Folder"
-                                      Command="{Binding NewFolderCommand}" />
-                        </ContextMenu>
-                    </ListBox.ContextMenu>
-
-                    <ListBox.DataTemplates>
-                        <DataTemplate x:DataType="vm:VaultItemViewModel">
-                            <Grid ColumnDefinitions="20,28,*,140,100,150"
-                                  Margin="8,5,8,5">
-
-                                <!-- Lock icon - only visible when file is checked out -->
-                                <TextBlock Grid.Column="0"
-                                           Text="🔒"
-                                           FontSize="10"
+                    <!-- Search -->
+                    <TextBox Grid.Column="1"
+                             x:Name="SearchBox"
+                             Classes="search"
+                             MaxWidth="520"
+                             Margin="24,0"
+                             Text="{Binding VaultBrowser.SearchText}"
+                             Watermark="Search the whole vault">
+                        <TextBox.InnerLeftContent>
+                            <ic:SymbolIcon Symbol="Search" Margin="10,0,2,0"
+                                           Foreground="{DynamicResource TextMutedBrush}" />
+                        </TextBox.InnerLeftContent>
+                        <TextBox.InnerRightContent>
+                            <Panel Margin="0,0,6,0">
+                                <TextBlock Text="Ctrl K"
+                                           Classes="caption"
                                            VerticalAlignment="Center"
-                                           Margin="0,0,4,0"
-                                           IsVisible="{Binding IsCheckedOut}"
-                                           Opacity="0.7" />
+                                           IsVisible="{Binding !VaultBrowser.IsSearchActive}" />
+                                <Button Classes="ghost"
+                                        Padding="4"
+                                        IsVisible="{Binding VaultBrowser.IsSearchActive}"
+                                        Command="{Binding VaultBrowser.ClearSearchCommand}"
+                                        ToolTip.Tip="Clear search">
+                                    <ic:SymbolIcon Symbol="Dismiss" FontSize="12" />
+                                </Button>
+                            </Panel>
+                        </TextBox.InnerRightContent>
+                    </TextBox>
 
-                                <!-- File/folder icon -->
-                                <TextBlock Grid.Column="1"
-                                           Text="{Binding Item,
-                                               Converter={x:Static converters:VaultItemIconConverter.Instance}}"
-                                           Margin="0,0,8,0"
-                                           VerticalAlignment="Center" />
+                    <!-- Settings + lock -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <Button Classes="ghost icon" ToolTip.Tip="Settings and tools">
+                            <ic:SymbolIcon Symbol="Settings" FontSize="18" />
+                            <Button.Flyout>
+                                <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                    <MenuItem Header="Theme">
+                                        <MenuItem.Icon><ic:SymbolIcon Symbol="DarkTheme" /></MenuItem.Icon>
+                                        <MenuItem Header="Match system" ToggleType="Radio" GroupName="theme"
+                                                  IsChecked="{Binding IsThemeSystem, Mode=OneWay}"
+                                                  Command="{Binding SetThemeCommand}" CommandParameter="System" />
+                                        <MenuItem Header="Dark" ToggleType="Radio" GroupName="theme"
+                                                  IsChecked="{Binding IsThemeDark, Mode=OneWay}"
+                                                  Command="{Binding SetThemeCommand}" CommandParameter="Dark" />
+                                        <MenuItem Header="Light" ToggleType="Radio" GroupName="theme"
+                                                  IsChecked="{Binding IsThemeLight, Mode=OneWay}"
+                                                  Command="{Binding SetThemeCommand}" CommandParameter="Light" />
+                                    </MenuItem>
+                                    <MenuItem Header="Compact layout" ToggleType="CheckBox"
+                                              IsChecked="{Binding IsCompact, Mode=OneWay}"
+                                              Command="{Binding ToggleCompactCommand}" />
+                                    <MenuItem Header="Open files in built-in viewers" ToggleType="CheckBox"
+                                              IsChecked="{Binding VaultBrowser.UseInternalViewer, Mode=OneWay}"
+                                              Command="{Binding VaultBrowser.ToggleInternalViewerCommand}"
+                                              ToolTip.Tip="When on, images, media, and text open inside DeerCrypt and are decrypted in memory. When off, files are extracted to a temp folder and opened in your default apps." />
+                                    <Separator />
+                                    <MenuItem Header="Compact vault…" Command="{Binding VaultBrowser.CompactCommand}">
+                                        <MenuItem.Icon><ic:SymbolIcon Symbol="Broom" /></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Check integrity…" Command="{Binding VaultBrowser.CheckIntegrityCommand}">
+                                        <MenuItem.Icon><ic:SymbolIcon Symbol="ShieldCheckmark" /></MenuItem.Icon>
+                                    </MenuItem>
+                                    <Separator />
+                                    <MenuItem Header="Open another vault…" Command="{Binding OpenVaultCommand}">
+                                        <MenuItem.Icon><ic:SymbolIcon Symbol="FolderOpen" /></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Create vault…" Command="{Binding NewVaultCommand}">
+                                        <MenuItem.Icon><ic:SymbolIcon Symbol="Add" /></MenuItem.Icon>
+                                    </MenuItem>
+                                </MenuFlyout>
+                            </Button.Flyout>
+                        </Button>
 
-                                <!-- Name - switches between display stack and rename TextBox -->
-                                <StackPanel Grid.Column="2"
-                                            VerticalAlignment="Center"
-                                            Spacing="1"
-                                            IsVisible="{Binding !IsRenaming}">
-                                    <TextBlock Text="{Binding DisplayName}" />
-                                    <TextBlock Text="{Binding SubText}"
-                                               FontSize="11"
-                                               Opacity="0.45"
-                                               IsVisible="{Binding HasSubText}" />
+                        <Button Classes="ghost"
+                                Command="{Binding LockVaultCommand}"
+                                ToolTip.Tip="Lock the vault (Ctrl+L)">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <ic:SymbolIcon Symbol="LockClosed" />
+                                <TextBlock Text="Lock" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Body: sidebar | splitter | content -->
+            <Grid Grid.Row="1"
+                  x:Name="BodyGrid"
+                  x:DataType="vm:VaultBrowserViewModel"
+                  DataContext="{Binding VaultBrowser}"
+                  ColumnDefinitions="232,Auto,*">
+
+                <!-- Sidebar -->
+                <Border Grid.Column="0"
+                        Background="{DynamicResource ChromeBackgroundBrush}"
+                        BorderBrush="{DynamicResource HairlineBrush}"
+                        BorderThickness="0,0,1,0">
+                    <Grid RowDefinitions="*,Auto">
+
+                        <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel Margin="0,8,0,8">
+
+                                <ItemsControl ItemsSource="{Binding PrimaryNav}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:SidebarItem">
+                                            <Button Classes="nav"
+                                                    Classes.active="{Binding IsActive}"
+                                                    Command="{Binding $parent[ItemsControl].((vm:VaultBrowserViewModel)DataContext).NavigateSidebarCommand}"
+                                                    CommandParameter="{Binding}">
+                                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                                    <ic:SymbolIcon Symbol="{Binding Icon}" />
+                                                    <TextBlock Text="{Binding Label}" />
+                                                </StackPanel>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock Text="Library" Classes="section" />
+                                <ItemsControl ItemsSource="{Binding LibraryNav}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:SidebarItem">
+                                            <Button Classes="nav"
+                                                    Classes.active="{Binding IsActive}"
+                                                    Command="{Binding $parent[ItemsControl].((vm:VaultBrowserViewModel)DataContext).NavigateSidebarCommand}"
+                                                    CommandParameter="{Binding}">
+                                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                                    <ic:SymbolIcon Symbol="{Binding Icon}" />
+                                                    <TextBlock Text="{Binding Label}" />
+                                                </StackPanel>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock Text="Folders" Classes="section" />
+                                <TreeView x:Name="FolderTree"
+                                          Classes="folders"
+                                          ItemsSource="{Binding FolderNodes}"
+                                          SelectedItem="{Binding SelectedTreeNode, Mode=TwoWay}"
+                                          DragDrop.AllowDrop="True">
+                                    <TreeView.ItemTemplate>
+                                        <TreeDataTemplate x:DataType="vm:DirectoryNodeViewModel"
+                                                          ItemsSource="{Binding Children}">
+                                            <Border Background="{Binding IsDropTarget,
+                                                        Converter={x:Static converters:BoolToHighlightConverter.Instance}}"
+                                                    CornerRadius="{StaticResource RadiusSmall}"
+                                                    Padding="2,0">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <ic:SymbolIcon Symbol="Folder" IconVariant="Filled"
+                                                                   Foreground="#E0A93B" />
+                                                    <TextBlock Text="{Binding Name}"
+                                                               VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                            </Border>
+                                        </TreeDataTemplate>
+                                    </TreeView.ItemTemplate>
+                                </TreeView>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- Storage summary -->
+                        <Border Grid.Row="1" Classes="divider-top" Padding="14,12">
+                            <StackPanel Spacing="6">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <ic:SymbolIcon Symbol="Storage" Foreground="{DynamicResource TextSecondaryBrush}" />
+                                    <TextBlock Text="{Binding StorageSummaryText}" Classes="secondary" FontSize="12"
+                                               VerticalAlignment="Center" />
                                 </StackPanel>
-                                <TextBox Grid.Column="2"
-                                         Text="{Binding EditingName}"
-                                         IsVisible="{Binding IsRenaming}"
-                                         BorderThickness="1"
-                                         Padding="2"
-                                         VerticalAlignment="Center"
-                                         GotFocus="OnRenameBoxGotFocus"
-                                         LostFocus="OnRenameBoxLostFocus" />
-
-                                <!-- Type -->
-                                <TextBlock Grid.Column="3"
-                                           Text="{Binding TypeText}"
-                                           VerticalAlignment="Center"
-                                           Opacity="0.6" />
-
-                                <!-- Size -->
-                                <TextBlock Grid.Column="4"
-                                           Text="{Binding AsFile.OriginalSize,
-                                               Converter={x:Static converters:FileSizeConverter.Instance}}"
-                                           VerticalAlignment="Center"
-                                           HorizontalAlignment="Right"
-                                           Opacity="0.6" />
-
-                                <!-- Date (works for both files and folders) -->
-                                <TextBlock Grid.Column="5"
-                                           Text="{Binding DateText}"
-                                           VerticalAlignment="Center"
-                                           HorizontalAlignment="Right"
-                                           Opacity="0.6"
-                                           Margin="8,0,0,0" />
-
-                                <!-- Drag-over highlight overlay -->
-                                <Border Grid.Column="0"
-                                        Grid.ColumnSpan="6"
-                                        CornerRadius="3"
-                                        BorderThickness="1.5"
-                                        IsVisible="{Binding IsDragTarget}"
-                                        IsHitTestVisible="False">
-        
-                                <Border.BorderBrush>
-                                    <SolidColorBrush Color="{DynamicResource SystemAccentColor}" />
-                                </Border.BorderBrush>
-    
-                                <Border.Background>
-                                    <SolidColorBrush Color="{DynamicResource SystemAccentColor}" Opacity="0.1" />
-                                </Border.Background>
-    
-                            </Border>
-                            </Grid>
-                        </DataTemplate>
-                    </ListBox.DataTemplates>
-                </ListBox>
-
-                <!-- Status bar -->
-                <Border Grid.Row="4"
-                        BorderBrush="{DynamicResource SeparatorBrush}"
-                        BorderThickness="0,1,0,0"
-                        Height="26">
-                    <Grid ColumnDefinitions="*,Auto"
-                          Margin="8,0">
-                        <TextBlock Grid.Column="0"
-                                   Text="{Binding StatusMessage}"
-                                   VerticalAlignment="Center"
-                                   FontSize="12" />
-                        <TextBlock Grid.Column="1"
-                                   Text="{Binding VaultInfoText}"
-                                   VerticalAlignment="Center"
-                                   FontSize="12"
-                                   Opacity="0.6" />
+                                <ProgressBar Classes="meter" Minimum="0" Maximum="100"
+                                             Value="{Binding StorageInUsePercent}" />
+                                <TextBlock Text="{Binding StorageDetailText}" Classes="caption"
+                                           TextWrapping="Wrap" />
+                                <Button Classes="ghost"
+                                        Padding="0,2"
+                                        HorizontalAlignment="Left"
+                                        IsVisible="{Binding HasReclaimableSpace}"
+                                        Command="{Binding CompactCommand}"
+                                        Foreground="{DynamicResource AccentBrush}">
+                                    <TextBlock Text="Compact to reclaim space" FontSize="12" />
+                                </Button>
+                            </StackPanel>
+                        </Border>
                     </Grid>
                 </Border>
 
+                <GridSplitter Grid.Column="1"
+                              x:Name="SidebarSplitter"
+                              Classes="sidebar"
+                              ResizeDirection="Columns" />
+
+                <!-- Content -->
+                <Grid Grid.Column="2" RowDefinitions="Auto,Auto,*,Auto">
+
+                    <!-- Toolbar: navigation, location, actions -->
+                    <Border Grid.Row="0"
+                            x:Name="NavBar"
+                            Classes="divider-bottom"
+                            Padding="10,8"
+                            DragDrop.AllowDrop="True">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2" Margin="0,0,8,0">
+                                <Button Classes="ghost icon" Command="{Binding NavigateBackCommand}" ToolTip.Tip="Back (Alt+Left)">
+                                    <ic:SymbolIcon Symbol="ArrowLeft" />
+                                </Button>
+                                <Button Classes="ghost icon" Command="{Binding NavigateForwardCommand}" ToolTip.Tip="Forward (Alt+Right)">
+                                    <ic:SymbolIcon Symbol="ArrowRight" />
+                                </Button>
+                                <Button Classes="ghost icon" Command="{Binding NavigateUpCommand}" ToolTip.Tip="Up one folder (Alt+Up)">
+                                    <ic:SymbolIcon Symbol="ArrowUp" />
+                                </Button>
+                            </StackPanel>
+
+                            <!-- Breadcrumb (folders) or view title (library views and search) -->
+                            <Panel Grid.Column="1" VerticalAlignment="Center">
+                                <ItemsControl ItemsSource="{Binding Breadcrumb}"
+                                              IsVisible="{Binding ShowBreadcrumb}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:BreadcrumbSegment">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ic:SymbolIcon Symbol="ChevronRight" FontSize="12"
+                                                               Foreground="{DynamicResource TextMutedBrush}"
+                                                               Margin="2,0"
+                                                               IsVisible="{Binding !IsFirst}" />
+                                                <Button Classes="ghost"
+                                                        Padding="6,3"
+                                                        Foreground="{DynamicResource TextPrimaryBrush}"
+                                                        Content="{Binding Name}"
+                                                        Command="{Binding $parent[ItemsControl].((vm:VaultBrowserViewModel)DataContext).NavigateToBreadcrumbCommand}"
+                                                        CommandParameter="{Binding}">
+                                                    <Button.Background>
+                                                        <MultiBinding Converter="{x:Static converters:EqualsToBrushConverter.Instance}">
+                                                            <Binding Path="DirectoryId" />
+                                                            <Binding Path="$parent[ItemsControl].((vm:VaultBrowserViewModel)DataContext).BreadcrumbDragTargetId" />
+                                                        </MultiBinding>
+                                                    </Button.Background>
+                                                </Button>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock Text="{Binding ViewTitle}"
+                                           Classes="title"
+                                           Margin="6,0"
+                                           IsVisible="{Binding !ShowBreadcrumb}" />
+                            </Panel>
+
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+
+                                <!-- Actions for the current selection -->
+                                <StackPanel Orientation="Horizontal" Spacing="2" IsVisible="{Binding HasSelection}">
+                                    <Button Classes="ghost icon" Command="{Binding ExtractCommand}" ToolTip.Tip="Extract to disk">
+                                        <ic:SymbolIcon Symbol="ArrowDownload" />
+                                    </Button>
+                                    <Button Classes="ghost icon" Command="{Binding MoveCommand}" ToolTip.Tip="Move to folder">
+                                        <ic:SymbolIcon Symbol="FolderArrowRight" />
+                                    </Button>
+                                    <Button Classes="ghost icon" Command="{Binding RenameCommand}" ToolTip.Tip="Rename (F2)">
+                                        <ic:SymbolIcon Symbol="Rename" />
+                                    </Button>
+                                    <Button Classes="ghost icon" Command="{Binding DeleteCommand}" ToolTip.Tip="Delete (Del)">
+                                        <ic:SymbolIcon Symbol="Delete" />
+                                    </Button>
+                                    <Rectangle Width="1" Margin="6,6" Fill="{DynamicResource HairlineStrongBrush}" />
+                                </StackPanel>
+
+                                <Border Classes="segmented" VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal" Spacing="2">
+                                        <Button Classes="ghost icon" Width="30" Height="26"
+                                                Classes.selected="{Binding !IsGridView}"
+                                                Command="{Binding SetViewModeCommand}" CommandParameter="List"
+                                                ToolTip.Tip="List view (Ctrl+1)">
+                                            <ic:SymbolIcon Symbol="AppsList" FontSize="15" />
+                                        </Button>
+                                        <Button Classes="ghost icon" Width="30" Height="26"
+                                                Classes.selected="{Binding IsGridView}"
+                                                Command="{Binding SetViewModeCommand}" CommandParameter="Grid"
+                                                ToolTip.Tip="Grid view (Ctrl+2)">
+                                            <ic:SymbolIcon Symbol="Grid" FontSize="15" />
+                                        </Button>
+                                    </StackPanel>
+                                </Border>
+
+                                <Button Classes="ghost icon" Command="{Binding NewFolderCommand}"
+                                        ToolTip.Tip="New folder (Ctrl+Shift+N)">
+                                    <ic:SymbolIcon Symbol="FolderAdd" />
+                                </Button>
+
+                                <Button Classes="primary" Margin="4,0,0,0">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <ic:SymbolIcon Symbol="Add" />
+                                        <TextBlock Text="Add" />
+                                        <ic:SymbolIcon Symbol="ChevronDown" FontSize="12" />
+                                    </StackPanel>
+                                    <Button.Flyout>
+                                        <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                            <MenuItem Header="Files…" Command="{Binding AddFilesCommand}" InputGesture="Ctrl+O">
+                                                <MenuItem.Icon><ic:SymbolIcon Symbol="DocumentAdd" /></MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="Folder…" Command="{Binding AddFolderCommand}">
+                                                <MenuItem.Icon><ic:SymbolIcon Symbol="FolderAdd" /></MenuItem.Icon>
+                                            </MenuItem>
+                                        </MenuFlyout>
+                                    </Button.Flyout>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Column headers (list view only) -->
+                    <Border Grid.Row="1"
+                            Classes="divider-bottom"
+                            IsVisible="{Binding !IsGridView}">
+                        <Grid ColumnDefinitions="30,*,150,90,140" Margin="16,0,16,0">
+                            <Button Grid.Column="1" Classes="columnHeader"
+                                    Content="{Binding NameHeaderText}"
+                                    Command="{Binding SortByCommand}" CommandParameter="Name"
+                                    HorizontalContentAlignment="Left" />
+                            <Button Grid.Column="2" Classes="columnHeader"
+                                    Content="{Binding TypeHeaderText}"
+                                    Command="{Binding SortByCommand}" CommandParameter="Type"
+                                    HorizontalContentAlignment="Left" Margin="12,6,0,6" />
+                            <Button Grid.Column="3" Classes="columnHeader"
+                                    Content="{Binding SizeHeaderText}"
+                                    Command="{Binding SortByCommand}" CommandParameter="Size"
+                                    HorizontalContentAlignment="Right" />
+                            <Button Grid.Column="4" Classes="columnHeader"
+                                    Content="{Binding DateHeaderText}"
+                                    Command="{Binding SortByCommand}" CommandParameter="Date"
+                                    HorizontalContentAlignment="Right" />
+                        </Grid>
+                    </Border>
+
+                    <!-- Items -->
+                    <Panel Grid.Row="2">
+                        <ListBox x:Name="FileList"
+                                 Classes="files"
+                                 Classes.grid="{Binding IsGridView}"
+                                 ItemsSource="{Binding CurrentItems}"
+                                 SelectedItem="{Binding SelectedFile}"
+                                 SelectionMode="Multiple">
+                            <ListBox.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Open" Command="{Binding OpenCommand}" InputGesture="Enter">
+                                        <MenuItem.Icon><ic:SymbolIcon Symbol="Open" /></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Extract…" Command="{Binding ExtractCommand}">
+                                        <MenuItem.Icon><ic:SymbolIcon Symbol="ArrowDownload" /></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Move to…" Command="{Binding MoveCommand}">
+                                        <MenuItem.Icon><ic:SymbolIcon Symbol="FolderArrowRight" /></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Rename" Command="{Binding RenameCommand}" InputGesture="F2">
+                                        <MenuItem.Icon><ic:SymbolIcon Symbol="Rename" /></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Delete" Command="{Binding DeleteCommand}" InputGesture="Delete">
+                                        <MenuItem.Icon><ic:SymbolIcon Symbol="Delete" /></MenuItem.Icon>
+                                    </MenuItem>
+                                    <Separator />
+                                    <MenuItem Header="New folder" Command="{Binding NewFolderCommand}" InputGesture="Ctrl+Shift+N">
+                                        <MenuItem.Icon><ic:SymbolIcon Symbol="FolderAdd" /></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Add files…" Command="{Binding AddFilesCommand}" InputGesture="Ctrl+O">
+                                        <MenuItem.Icon><ic:SymbolIcon Symbol="DocumentAdd" /></MenuItem.Icon>
+                                    </MenuItem>
+                                </ContextMenu>
+                            </ListBox.ContextMenu>
+                        </ListBox>
+
+                        <!-- Empty state (doesn't block drops onto the list behind it) -->
+                        <StackPanel IsVisible="{Binding IsCurrentViewEmpty}"
+                                    IsHitTestVisible="False"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Spacing="6"
+                                    MaxWidth="320">
+                            <ic:SymbolIcon Symbol="FolderOpen" FontSize="40"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           HorizontalAlignment="Center" />
+                            <TextBlock Text="{Binding EmptyStateTitle}" FontSize="15" FontWeight="SemiBold"
+                                       HorizontalAlignment="Center" Margin="0,6,0,0" />
+                            <TextBlock Text="{Binding EmptyStateText}" Classes="secondary"
+                                       TextWrapping="Wrap" TextAlignment="Center" />
+                        </StackPanel>
+                    </Panel>
+
+                    <!-- Status bar -->
+                    <Border Grid.Row="3" Classes="divider-top" Padding="14,0" Height="28"
+                            Background="{DynamicResource ChromeBackgroundBrush}">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0" Text="{Binding StatusMessage}"
+                                       Classes="secondary" FontSize="12" VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Grid.Column="1" Text="{Binding SelectionText}"
+                                       Classes="secondary" FontSize="12" VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+                </Grid>
             </Grid>
         </Grid>
-    </Grid>
+    </Panel>
 </Window>

@@ -97,6 +97,7 @@ namespace DeerCrypt.ViewModels
             _searchCts?.Cancel( );
             _searchCts = new CancellationTokenSource( );
             var ct = _searchCts.Token;
+            RaiseListStateChanged( );
             _ = RunSearchDebouncedAsync( value, ct );
         }
 
@@ -118,7 +119,7 @@ namespace DeerCrypt.ViewModels
 
             if( string.IsNullOrWhiteSpace( query ) )
             {
-                await LoadItemsAsync( CurrentDirectoryId, ct );
+                await ReloadCurrentViewAsync( ct );
                 return;
             }
 
@@ -182,7 +183,7 @@ namespace DeerCrypt.ViewModels
         public partial bool SortDescending { get; set; }
 
         private string FormatHeader( string label, SortColumn col ) =>
-            SortColumn == col ? $"{label} {( SortDescending ? "▼" : "▲" )}" : label;
+            SortColumn == col ? $"{label} {( SortDescending ? "↓" : "↑" )}" : label;
 
         public string NameHeaderText => FormatHeader( "Name", SortColumn.Name );
         public string TypeHeaderText => FormatHeader( "Type", SortColumn.Type );
@@ -196,6 +197,7 @@ namespace DeerCrypt.ViewModels
         public VaultBrowserViewModel( VaultService vaultService )
         {
             _vaultService = vaultService;
+            InitializeShell( );
 
             // Notify commands when multi-selection changes
             SelectedItems.CollectionChanged += ( _, _ ) =>
@@ -238,6 +240,7 @@ namespace DeerCrypt.ViewModels
 
             await rootNode.LoadChildrenAsync( Vault, cancellationToken );
             RootNodes.Add( rootNode );
+            OnPropertyChanged( nameof( FolderNodes ) );
 
             await NavigateToNodeAsync( rootNode, pushToBack: false, cancellationToken: cancellationToken );
             await RefreshVaultInfoAsync( cancellationToken );
@@ -415,12 +418,8 @@ namespace DeerCrypt.ViewModels
             {
                 VaultListing listing = await Vault.ListAsync(directoryId, cancellationToken);
 
+                // No ".." row: the breadcrumb, Up button, and Backspace cover going up.
                 var allItems = new List<VaultItemViewModel>();
-
-                // Prepend ".." when not at root - parent ID from second-to-last breadcrumb
-                bool isRoot = directoryId == Vault.RootDirectoryId;
-                if( !isRoot && Breadcrumb.Count >= 2 )
-                    allItems.Add( VaultItemViewModel.CreateParentDir( Breadcrumb [ ^2 ].DirectoryId ) );
 
                 foreach( VaultDirectoryEntry dir in listing.Directories )
                 {
@@ -443,8 +442,7 @@ namespace DeerCrypt.ViewModels
                 foreach( var item in GetSortedItems( allItems ) )
                     CurrentItems.Add( item );
 
-                int realCount = CurrentItems.Count(i => !i.IsParentDir);
-                StatusMessage = $"{realCount} item{( realCount == 1 ? "" : "s" )}";
+                StatusMessage = string.Empty; // item count is shown on the right of the status bar
             }
             catch( Exception ex )
             {
@@ -522,6 +520,8 @@ namespace DeerCrypt.ViewModels
             try
             {
                 VaultInfo info = await Vault.GetVaultInfoAsync(cancellationToken);
+                long reclaimable = await Vault.GetReclaimableBytesAsync( cancellationToken );
+                UpdateStorageSummary( info, reclaimable );
                 VaultInfoText = $"{info.TotalFiles} file{( info.TotalFiles == 1 ? "" : "s" )}  •  " +
                                 $"{FormatSize( info.TotalOriginalSize )}  •  " +
                                 $"Vault: {FormatSize( info.VaultFileSize )}";
@@ -536,13 +536,15 @@ namespace DeerCrypt.ViewModels
             bool pushToBack = true,
             CancellationToken cancellationToken = default )
         {
-            // Cancel any in-flight search and reset the search box silently
-            _searchCts?.Cancel( );
-            if( SearchText.Length > 0 )
+            // Cancel any in-flight search or library view and reset the search box silently
+            ResetSearchSilently( );
+            _viewCts?.Cancel( );
+            bool leavingSmartView = ActiveSmartView != null;
+            ActiveSmartView = null;
+            if( leavingSmartView && SortColumn == SortColumn.Date && SortDescending )
             {
-                SearchText = string.Empty;
-                OnPropertyChanged( nameof( SearchText ) );
-                OnPropertyChanged( nameof( IsSearchActive ) );
+                SortColumn     = SortColumn.Name;
+                SortDescending = false;
             }
 
             if( pushToBack && _currentDirectory != null )
@@ -559,6 +561,7 @@ namespace DeerCrypt.ViewModels
             // Breadcrumb MUST be updated before LoadItemsAsync so the ".." entry
             // can read Breadcrumb[^2] for the parent directory ID.
             UpdateBreadcrumb( node );
+            SyncSidebarState( );
             await LoadItemsAsync( node.DirectoryId, cancellationToken );
         }
 
@@ -575,8 +578,8 @@ namespace DeerCrypt.ViewModels
                 current = FindParentNode( RootNodes, current.DirectoryId );
             }
 
-            foreach( BreadcrumbSegment segment in segments )
-                Breadcrumb.Add( segment );
+            for( int i = 0; i < segments.Count; i++ )
+                Breadcrumb.Add( segments [ i ] with { IsFirst = i == 0 } );
         }
 
         private static DirectoryNodeViewModel? FindParentNode(
@@ -629,7 +632,7 @@ namespace DeerCrypt.ViewModels
                     var vm = new ConfirmDialogViewModel
                     {
                         Title       = "Integrity Check",
-                        Message     = "✓ Vault integrity check passed.",
+                        Message     = "Vault integrity check passed.",
                         Detail      = "No issues found.",
                         ConfirmText = "OK",
                         CancelText  = ""
@@ -665,7 +668,7 @@ namespace DeerCrypt.ViewModels
             }
         }
 
-        [RelayCommand]
+        [RelayCommand( CanExecute = nameof( IsFolderView ) )]
         private async Task AddFilesAsync( CancellationToken cancellationToken )
         {
             if( _currentDirectory == null || OwnerWindow == null ) return;
@@ -707,11 +710,11 @@ namespace DeerCrypt.ViewModels
             progressDialog.Close( );
             await dialogTask;
 
-            await LoadItemsAsync( _currentDirectory.DirectoryId, cancellationToken );
+            await ReloadCurrentViewAsync( cancellationToken );
             await RefreshVaultInfoAsync( cancellationToken );
         }
 
-        [RelayCommand]
+        [RelayCommand( CanExecute = nameof( IsFolderView ) )]
         private async Task AddFolderAsync( CancellationToken cancellationToken )
         {
             if( _currentDirectory == null || OwnerWindow == null ) return;
@@ -953,9 +956,21 @@ namespace DeerCrypt.ViewModels
                 Vault.RootDirectoryId, "Vault", isRoot: true);
             await rootNode.LoadChildrenAsync( Vault, cancellationToken );
             RootNodes.Add( rootNode );
+            OnPropertyChanged( nameof( FolderNodes ) );
 
             DirectoryNodeViewModel? restored = FindNode(RootNodes, currentId)
                 ?? rootNode;
+
+            if( ActiveSmartView != null )
+            {
+                // Stay in the library view; just re-point the folder state at the new tree
+                _currentDirectory = restored;
+                SelectedDirectory = restored;
+                UpdateBreadcrumb( restored );
+                SyncSidebarState( );
+                await ReloadCurrentViewAsync( cancellationToken );
+                return;
+            }
 
             await NavigateToNodeAsync( restored, pushToBack: false, cancellationToken: cancellationToken );
         }
@@ -1185,8 +1200,6 @@ namespace DeerCrypt.ViewModels
             await deleteTask;
 
             await RefreshVaultInfoAsync( cancellationToken );
-            int realCount = CurrentItems.Count(i => !i.IsParentDir);
-            StatusMessage = $"{realCount} item{( realCount == 1 ? "" : "s" )}";
         }
 
         private static bool RemoveNodeFromTree(
@@ -1274,7 +1287,7 @@ namespace DeerCrypt.ViewModels
 
         // New Folder 
 
-        [RelayCommand]
+        [RelayCommand( CanExecute = nameof( IsFolderView ) )]
         private async Task NewFolderAsync( CancellationToken cancellationToken )
         {
             if( SelectedDirectory == null || OwnerWindow == null ) return;
@@ -1386,6 +1399,13 @@ namespace DeerCrypt.ViewModels
         [RelayCommand( CanExecute = nameof( CanNavigateBack ) )]
         private async Task NavigateBackAsync( CancellationToken cancellationToken )
         {
+            // From a library view, Back returns to the folder you were in
+            if( ActiveSmartView != null && _currentDirectory != null )
+            {
+                await NavigateToNodeAsync( _currentDirectory, pushToBack: false, cancellationToken: cancellationToken );
+                return;
+            }
+
             if( _backStack.Count == 0 ) return;
 
             DirectoryNodeViewModel current  = _currentDirectory!;
@@ -1412,7 +1432,7 @@ namespace DeerCrypt.ViewModels
             BreadcrumbSegment segment,
             CancellationToken cancellationToken = default )
         {
-            if( segment.DirectoryId == _currentDirectory?.DirectoryId ) return;
+            if( ActiveSmartView == null && segment.DirectoryId == _currentDirectory?.DirectoryId ) return;
 
             DirectoryNodeViewModel? node = FindNode(RootNodes, segment.DirectoryId);
             if( node == null ) return;
@@ -1462,6 +1482,9 @@ namespace DeerCrypt.ViewModels
         /// </summary>
         [ObservableProperty]
         public partial bool UseInternalViewer { get; set; } = App.SettingsService.Settings.UseInternalViewer;
+
+        [RelayCommand]
+        private void ToggleInternalViewer( ) => UseInternalViewer = !UseInternalViewer;
 
         partial void OnUseInternalViewerChanged( bool value )
         {
@@ -1716,8 +1739,6 @@ namespace DeerCrypt.ViewModels
                 var existing = CurrentItems.FirstOrDefault( i => i.Id == deletedItem.Id );
                 if( existing != null ) CurrentItems.Remove( existing );
                 _ = RefreshVaultInfoAsync( cancellationToken );
-                int realCount = CurrentItems.Count( i => !i.IsParentDir );
-                StatusMessage = $"{realCount} item(s)";
             }
             vm.ItemDeleted += itemDeletedHandler;
 
@@ -1939,8 +1960,7 @@ namespace DeerCrypt.ViewModels
                         checkedOut.TempPath,
                         cancellationToken: CancellationToken.None );
 
-                    if( _currentDirectory != null )
-                        await LoadItemsAsync( _currentDirectory.DirectoryId );
+                    await ReloadCurrentViewAsync( );
 
                     await RefreshVaultInfoAsync( );
                     StatusMessage = $"\"{item.DisplayName}\" saved to vault.";

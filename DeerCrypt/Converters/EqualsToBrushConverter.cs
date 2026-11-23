@@ -1,4 +1,4 @@
-using Avalonia.Data.Converters;
+﻿using Avalonia.Data.Converters;
 using Avalonia.Media;
 using System;
 using System.Collections.Generic;
@@ -19,7 +19,7 @@ namespace DeerCrypt.Converters
         public object? Convert( IList<object?> values, Type targetType, object? parameter, CultureInfo culture )
         {
             if( values.Count >= 2 && values [ 0 ] is string a && values [ 1 ] is string b && a == b )
-                return new SolidColorBrush( Color.FromArgb( 60, 91, 155, 213 ) );
+                return DropTargetBrushProvider.Get( );
 
             return Brushes.Transparent;
         }

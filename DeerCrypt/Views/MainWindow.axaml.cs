@@ -38,6 +38,184 @@ namespace DeerCrypt.Views
         public MainWindow( )
         {
             InitializeComponent( );
+            WireWelcomeDrop( );
+            WireSidebar( );
+        }
+
+        // Keyboard: search focus 
+
+        protected override void OnKeyDown( KeyEventArgs e )
+        {
+            base.OnKeyDown( e );
+            if( e.Handled ) return;
+
+            var search = this.FindControl<TextBox>( "SearchBox" );
+            if( search == null || _currentBrowser == null ) return;
+
+            // Ctrl+F / Ctrl+K: jump to search
+            if( e.KeyModifiers == KeyModifiers.Control && e.Key is Key.F or Key.K )
+            {
+                search.Focus( );
+                search.SelectAll( );
+                e.Handled = true;
+                return;
+            }
+
+            // Escape in search: clear it and hand focus back to the list
+            if( e.Key == Key.Escape && search.IsFocused )
+            {
+                _currentBrowser.SearchText = string.Empty;
+                this.FindControl<ListBox>( "FileList" )?.Focus( );
+                e.Handled = true;
+            }
+        }
+
+        // Welcome screen: drop a .dcv file to open it 
+
+        private void WireWelcomeDrop( )
+        {
+            var root    = this.FindControl<Panel>( "WelcomeRoot" );
+            var overlay = this.FindControl<Border>( "WelcomeDropOverlay" );
+            if( root == null || overlay == null ) return;
+
+            static string? FindVaultPath( DragEventArgs e ) =>
+                e.DataTransfer.TryGetFiles( )?
+                    .Select( f => f.Path.IsAbsoluteUri ? f.Path.LocalPath : null )
+                    .FirstOrDefault( p => p != null
+                        && p.EndsWith( DeerCryptLib.Vault.VaultFile.FileExtension, StringComparison.OrdinalIgnoreCase )
+                        && File.Exists( p ) );
+
+            root.AddHandler( DragDrop.DragOverEvent, ( _, e ) =>
+            {
+                bool ok = e.DataTransfer.Contains( DataFormat.File ) && FindVaultPath( e ) != null;
+                e.DragEffects     = ok ? DragDropEffects.Copy : DragDropEffects.None;
+                overlay.IsVisible = ok;
+                e.Handled         = true;
+            } );
+
+            root.AddHandler( DragDrop.DragLeaveEvent, ( _, _ ) => overlay.IsVisible = false );
+
+            root.AddHandler( DragDrop.DropEvent, async ( _, e ) =>
+            {
+                overlay.IsVisible = false;
+                if( FindVaultPath( e ) is not { } path ) return;
+                if( DataContext is MainViewModel { IsVaultOpen: false } vm )
+                    await vm.OpenDroppedVaultAsync( path );
+                e.Handled = true;
+            } );
+        }
+
+        // Sidebar: remembered width, and folder tree as a drop target 
+
+        private void WireSidebar( )
+        {
+            var body     = this.FindControl<Grid>( "BodyGrid" );
+            var splitter = this.FindControl<GridSplitter>( "SidebarSplitter" );
+            if( body != null )
+            {
+                double saved = App.SettingsService.Settings.SidebarWidth;
+                body.ColumnDefinitions [ 0 ].Width = new GridLength( Math.Clamp( saved, 180, 420 ) );
+                body.ColumnDefinitions [ 0 ].MinWidth = 180;
+                body.ColumnDefinitions [ 0 ].MaxWidth = 420;
+            }
+            if( splitter != null && body != null )
+            {
+                splitter.DragCompleted += ( _, _ ) =>
+                {
+                    App.SettingsService.Settings.SidebarWidth = body.ColumnDefinitions [ 0 ].ActualWidth;
+                    App.SettingsService.Save( );
+                };
+            }
+
+            var tree = this.FindControl<TreeView>( "FolderTree" );
+            if( tree == null ) return;
+
+            DirectoryNodeViewModel? hoveredNode = null;
+            void SetHovered( DirectoryNodeViewModel? node )
+            {
+                if( ReferenceEquals( node, hoveredNode ) ) return;
+                if( hoveredNode != null ) hoveredNode.IsDropTarget = false;
+                hoveredNode = node;
+                if( hoveredNode != null ) hoveredNode.IsDropTarget = true;
+            }
+
+            static DirectoryNodeViewModel? NodeAt( Control? element )
+            {
+                for( var c = element; c != null; c = c.Parent as Control )
+                    if( c is TreeViewItem { DataContext: DirectoryNodeViewModel node } )
+                        return node;
+                return null;
+            }
+
+            tree.AddHandler( DragDrop.DragOverEvent, ( _, e ) =>
+            {
+                var node = NodeAt( e.Source as Control );
+                bool vaultItems = e.DataTransfer.Contains( _vaultItemsFormat );
+                bool files      = e.DataTransfer.Contains( DataFormat.File );
+
+                if( node == null || ( !vaultItems && !files ) )
+                {
+                    e.DragEffects = DragDropEffects.None;
+                    SetHovered( null );
+                }
+                else if( vaultItems )
+                {
+                    var ids = e.DataTransfer.TryGetValue( _vaultItemsFormat )?
+                        .Split( '\n', StringSplitOptions.RemoveEmptyEntries ) ?? [ ];
+                    bool valid = !ids.Contains( node.DirectoryId );
+                    e.DragEffects = valid ? DragDropEffects.Move : DragDropEffects.None;
+                    SetHovered( valid ? node : null );
+                }
+                else
+                {
+                    e.DragEffects = DragDropEffects.Copy;
+                    SetHovered( node );
+                }
+                e.Handled = true;
+            } );
+
+            tree.AddHandler( DragDrop.DragLeaveEvent, ( _, _ ) => SetHovered( null ) );
+
+            tree.AddHandler( DragDrop.DropEvent, async ( _, e ) =>
+            {
+                var node = NodeAt( e.Source as Control );
+                SetHovered( null );
+                if( node == null || _currentBrowser is not { } browser ) return;
+                e.Handled = true;
+
+                if( e.DataTransfer.Contains( _vaultItemsFormat ) )
+                {
+                    var ids = e.DataTransfer.TryGetValue( _vaultItemsFormat )?
+                        .Split( '\n', StringSplitOptions.RemoveEmptyEntries ) ?? [ ];
+                    if( ids.Length > 0 && !ids.Contains( node.DirectoryId ) )
+                        await browser.MoveItemsAsync( ids, node.DirectoryId );
+                    return;
+                }
+
+                var (filePaths, folderPaths) = SplitDroppedPaths( e );
+                if( filePaths.Count + folderPaths.Count > 0 )
+                    await browser.HandleDropAsync( filePaths, folderPaths, node.DirectoryId );
+            } );
+        }
+
+        private static (List<string> Files, List<string> Folders) SplitDroppedPaths( DragEventArgs e )
+        {
+            List<string> filePaths   = [];
+            List<string> folderPaths = [];
+
+            foreach( var item in e.DataTransfer.TryGetFiles( ) ?? [ ] )
+            {
+                if( !item.Path.IsAbsoluteUri ) continue;
+                string path = item.Path.LocalPath
+                    .TrimEnd( Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar );
+
+                if( Directory.Exists( path ) )
+                    folderPaths.Add( path );
+                else if( File.Exists( path ) )
+                    filePaths.Add( path );
+            }
+
+            return (filePaths, folderPaths);
         }
 
         protected override void OnDataContextChanged( EventArgs e )
@@ -125,11 +303,25 @@ namespace DeerCrypt.Views
                     await browser.OpenFileAsync( item );
             };
 
-            // Enter/Escape for rename
+            // Enter/Escape for rename; Enter opens and Backspace goes up otherwise
             list.KeyDown += async ( _, e ) =>
             {
                 if( _currentBrowser is not { } browser ) return;
-                if( browser.SelectedFile?.IsRenaming != true ) return;
+                if( browser.SelectedFile?.IsRenaming != true )
+                {
+                    if( e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.None
+                        && browser.OpenCommand.CanExecute( null ) )
+                    {
+                        await browser.OpenCommand.ExecuteAsync( null );
+                        e.Handled = true;
+                    }
+                    else if( e.Key == Key.Back && browser.NavigateUpCommand.CanExecute( null ) )
+                    {
+                        await browser.NavigateUpCommand.ExecuteAsync( null );
+                        e.Handled = true;
+                    }
+                    return;
+                }
 
                 if( e.Key == Key.Enter )
                 {
@@ -260,7 +452,7 @@ namespace DeerCrypt.Views
                     return;
                 }
 
-                if( e.DataTransfer.Contains( DataFormat.File ) )
+                if( e.DataTransfer.Contains( DataFormat.File ) && browser?.IsFolderView == true )
                 {
                     e.DragEffects = DragDropEffects.Copy;
                     var newTarget = hovered?.IsDir == true ? hovered : null;
@@ -309,28 +501,15 @@ namespace DeerCrypt.Views
                 }
 
                 if( !e.DataTransfer.Contains( DataFormat.File ) || _currentBrowser == null ) return;
-
-                var files = e.DataTransfer.TryGetFiles( )?.ToList( );
-                if( files == null || files.Count == 0 ) return;
+                if( !_currentBrowser.IsFolderView ) return; // library views have no single target folder
 
                 var target = GetHoveredItem( list, e.Source as Control );
                 string targetDirectoryId = target?.IsDir == true
                     ? target.AsDir!.Id
                     : _currentBrowser.CurrentDirectoryId;
 
-                List<string> filePaths   = [];
-                List<string> folderPaths = [];
-
-                foreach( var item in files )
-                {
-                    string path = item.Path.LocalPath
-                        .TrimEnd( Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar );
-
-                    if( Directory.Exists( path ) )
-                        folderPaths.Add( path );
-                    else if( File.Exists( path ) )
-                        filePaths.Add( path );
-                }
+                var (filePaths, folderPaths) = SplitDroppedPaths( e );
+                if( filePaths.Count + folderPaths.Count == 0 ) return;
 
                 await _currentBrowser.HandleDropAsync( filePaths, folderPaths, targetDirectoryId );
                 e.Handled = true;

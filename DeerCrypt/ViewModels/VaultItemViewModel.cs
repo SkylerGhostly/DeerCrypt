@@ -1,5 +1,9 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+﻿using Avalonia.Media;
+using CommunityToolkit.Mvvm.ComponentModel;
+using DeerCrypt.Converters;
+using DeerCrypt.Services;
 using DeerCryptLib.Vault;
+using FluentIcons.Common;
 using System;
 using System.IO;
 
@@ -41,6 +45,20 @@ namespace DeerCrypt.ViewModels
 
         public VaultEntry? AsFile => Item as VaultEntry;
         public VaultDirectoryEntry? AsDir => Item as VaultDirectoryEntry;
+
+        /// <summary>Broad file category - drives the icon, its tint, and library filters.</summary>
+        public FileKind Kind { get; } = item is VaultDirectoryEntry
+            ? FileKind.Folder
+            : FileTypeHelper.GetKind( item.Name );
+
+        public Symbol Icon => FileKindVisuals.GetIcon( Kind );
+        public IBrush IconBrush => FileKindVisuals.GetBrush( Kind );
+
+        /// <summary>Human-readable size for files; empty for folders.</summary>
+        public string SizeText => AsFile is { } f ? FileSizeConverter.Format( f.OriginalSize ) : string.Empty;
+
+        /// <summary>Second line in grid tiles: size for files, "Folder" for folders.</summary>
+        public string TileDetailText => IsDir ? "Folder" : SizeText;
 
         /// <summary>
         /// Friendly type label for the Type column.
@@ -164,7 +182,13 @@ namespace DeerCrypt.ViewModels
             {
                 if( IsParentDir ) return "";
                 DateTime? date = AsFile?.AddedAt ?? AsDir?.CreatedAt;
-                return date?.ToString( "yyyy-MM-dd HH:mm" ) ?? "";
+                if( date is not { } d ) return "";
+                DateTime local = d.ToLocalTime( );
+                return local.Date == DateTime.Today
+                    ? $"Today {local:HH:mm}"
+                    : local.Year == DateTime.Today.Year
+                        ? local.ToString( "MMM d, HH:mm" )
+                        : local.ToString( "MMM d, yyyy" );
             }
         }
 

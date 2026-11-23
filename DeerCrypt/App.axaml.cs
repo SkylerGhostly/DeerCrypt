@@ -32,6 +32,7 @@ namespace DeerCrypt
         public override async void OnFrameworkInitializationCompleted( )
         {
             SettingsService.Load( );
+            ThemeService.Apply( SettingsService.Settings );
 
             // Clean up any temp files left from a previous session
             CleanupTempDirectory( );
@@ -53,8 +54,8 @@ namespace DeerCrypt
             base.OnFrameworkInitializationCompleted( );
 
             // Set AFTER base init so any Avalonia-internal SKGraphics calls can't override ours.
-            // Skia's default is 2 MB; color emoji at 72 pt on a 2× DPI screen occupy ~83 KB each,
-            // so the default exhausts quickly and causes subsequent emoji to fall back to monochrome.
+            // Skia's default is 2 MB, which glyph-heavy views (and any color emoji in file names)
+            // exhaust quickly.
             SKGraphics.SetFontCacheLimit( 64 * 1024 * 1024 );
         }
 
