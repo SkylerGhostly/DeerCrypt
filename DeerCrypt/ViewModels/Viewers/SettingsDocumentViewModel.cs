@@ -38,6 +38,7 @@ namespace DeerCrypt.ViewModels.Viewers
             var s = App.SettingsService.Settings;
             ThemeIndex            = s.Theme switch { "Dark" => 1, "Light" => 2, _ => 0 };
             DensityIndex          = s.Density == "Compact" ? 1 : 0;
+            ViewerPlacementIndex  = s.OpenViewersIn == "Windows" ? 1 : 0;
             DefaultThumbnailIndex = Math.Max( 0, Array.IndexOf( ModeValues, s.DefaultThumbnails ) );
             VaultThumbnailIndex   = browser.VaultThumbnailSetting is { } v ? Array.IndexOf( ModeValues, v ) + 1 : 0;
             CacheLimitIndex       = Math.Max( 0, Array.IndexOf( CacheLimitsMb, browser.ThumbnailCacheLimitBytes / ( 1024 * 1024 ) ) );
@@ -72,6 +73,18 @@ namespace DeerCrypt.ViewModels.Viewers
             App.SettingsService.Settings.Density = density;
             App.SettingsService.Save( );
             ThemeService.ApplyDensity( density );
+        }
+
+        // Opening files (app-wide)
+
+        /// <summary>0 = tabs in the main window, 1 = a window per file.</summary>
+        [ObservableProperty] public partial int ViewerPlacementIndex { get; set; }
+
+        partial void OnViewerPlacementIndexChanged( int value )
+        {
+            if( _loading ) return;
+            App.SettingsService.Settings.OpenViewersIn = value == 1 ? "Windows" : "Tabs";
+            App.SettingsService.Save( );
         }
 
         // Thumbnails

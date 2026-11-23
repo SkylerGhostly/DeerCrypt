@@ -42,6 +42,8 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceInclude Source="avares://DeerCrypt/Themes/Tokens.axaml" />
             </ResourceDictionary.MergedDictionaries>
+            <!-- Slimmer scroll bars when they expand on hover (Fluent's default is chunky) -->
+            <x:Double x:Key="ScrollBarSize">10</x:Double>
             <converters:VaultItemIconConverter x:Key="VaultItemIconConverter" />
             <converters:FileSizeConverter x:Key="FileSizeConverter" />
             <converters:BoolToHighlightConverter x:Key="BoolToHighlightConverter" />

@@ -33,6 +33,17 @@ namespace DeerCrypt.Views.Viewers
             _onClosed = onClosed;
             DataContext = doc;
             InitializeComponent( );
+
+            // Ctrl+W closes the window, like a tab (asks first about unsaved edits). Tunnel, so a
+            // focused control inside can't swallow it.
+            AddHandler( KeyDownEvent, ( _, e ) =>
+            {
+                if( e.Key == Key.W && e.KeyModifiers == KeyModifiers.Control )
+                {
+                    e.Handled = true;
+                    Close( );
+                }
+            }, RoutingStrategies.Tunnel );
             PropertyChanged += ( _, e ) =>
             {
                 if( e.Property != WindowStateProperty ) return;

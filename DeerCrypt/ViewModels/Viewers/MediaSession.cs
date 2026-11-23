@@ -82,7 +82,10 @@ namespace DeerCrypt.ViewModels.Viewers
             // 3.0.24 ignores --avcodec-hw when it is passed to the LibVLC instance (verified).
             if( OperatingSystem.IsLinux( ) )
                 _media.AddOption( ":avcodec-hw=none" );
-            MediaPlayer = new MediaPlayer( _media ) { Volume = volume, Mute = muted };
+            // VLC must not take keyboard or mouse input on its video surface: on X11, key presses go
+            // to the window under the pointer, so with the cursor over the video VLC swallowed
+            // shortcuts like Ctrl+W and Space. With input off they reach DeerCrypt instead.
+            MediaPlayer = new MediaPlayer( _media ) { Volume = volume, Mute = muted, EnableKeyInput = false, EnableMouseInput = false };
             if( Math.Abs( rate - 1f ) > 0.001f ) MediaPlayer.SetRate( rate );
 
             _onLengthChanged = ( _, e ) =>

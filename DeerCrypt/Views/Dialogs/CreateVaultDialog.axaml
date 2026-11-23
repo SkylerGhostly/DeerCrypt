@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ic="using:FluentIcons.Avalonia"
         xmlns:vm="using:DeerCrypt.ViewModels.Dialogs"
+        xmlns:views="using:DeerCrypt.Views"
         x:Class="DeerCrypt.Views.Dialogs.CreateVaultDialog"
         x:DataType="vm:CreateVaultViewModel"
         Background="{DynamicResource AppBackgroundBrush}"
@@ -53,7 +54,7 @@
 
             <StackPanel Spacing="8">
                 <TextBlock Text="Password" Classes="field-label" Margin="0" />
-                <TextBox Watermark="Password" PasswordChar="●"
+                <TextBox x:Name="PasswordBox" Watermark="Password" PasswordChar="●"
                          RevealPassword="{Binding ShowPassword}" Text="{Binding Password}">
                     <TextBox.InnerLeftContent>
                         <ic:SymbolIcon Symbol="Key" Margin="10,0,0,0" Foreground="{DynamicResource TextMutedBrush}" />
@@ -65,12 +66,22 @@
                         </ToggleButton>
                     </TextBox.InnerRightContent>
                 </TextBox>
-                <TextBox Watermark="Confirm password" PasswordChar="●"
+                <TextBox x:Name="ConfirmBox" Watermark="Confirm password" PasswordChar="●"
                          RevealPassword="{Binding ShowPassword}" Text="{Binding ConfirmPassword}">
                     <TextBox.InnerLeftContent>
                         <ic:SymbolIcon Symbol="Key" Margin="10,0,0,0" Foreground="{DynamicResource TextMutedBrush}" />
                     </TextBox.InnerLeftContent>
                 </TextBox>
+                <StackPanel Orientation="Horizontal" Spacing="6" Margin="2,0,0,0">
+                    <StackPanel.IsVisible>
+                        <MultiBinding Converter="{x:Static BoolConverters.Or}">
+                            <Binding Path="#PasswordBox.(views:CapsLock.IsOn)" />
+                            <Binding Path="#ConfirmBox.(views:CapsLock.IsOn)" />
+                        </MultiBinding>
+                    </StackPanel.IsVisible>
+                    <ic:SymbolIcon Symbol="Warning" FontSize="14" Foreground="{DynamicResource WarningBrush}" />
+                    <TextBlock Text="Caps Lock is on" FontSize="12" Foreground="{DynamicResource WarningBrush}" VerticalAlignment="Center" />
+                </StackPanel>
                 <TextBlock Text="{Binding PasswordMatchText}"
                            Foreground="{Binding PasswordMatchBrush}"
                            FontSize="12"

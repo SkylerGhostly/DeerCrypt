@@ -38,6 +38,7 @@ namespace DeerCrypt.ViewModels
         [NotifyCanExecuteChangedFor( nameof( DeleteCommand ) )]
         [NotifyCanExecuteChangedFor( nameof( RenameCommand ) )]
         [NotifyCanExecuteChangedFor( nameof( OpenCommand ) )]
+        [NotifyCanExecuteChangedFor( nameof( OpenInNewWindowCommand ) )]
         [NotifyCanExecuteChangedFor( nameof( MoveCommand ) )]
         public partial VaultItemViewModel? SelectedFile { get; set; }
 
@@ -469,6 +470,13 @@ namespace DeerCrypt.ViewModels
         }
 
         private bool CanOpen => IsBrowserActive && SelectedFile != null && !SelectedFile.IsParentDir;
+
+        /// <summary>Ctrl+Enter / Ctrl+click: the file opens in a new window, even if it's already open.</summary>
+        [RelayCommand( CanExecute = nameof( CanOpenInNewWindow ) )]
+        private Task OpenInNewWindowAsync( ) =>
+            SelectedFile is { IsFile: true } item ? OpenFileAsync( item, newWindow: true ) : Task.CompletedTask;
+
+        private bool CanOpenInNewWindow => CanOpen && SelectedFile!.IsFile && UseInternalViewer;
 
         public Action? FocusRenameBox { get; set; }
 
@@ -1398,7 +1406,8 @@ namespace DeerCrypt.ViewModels
 
         public async Task OpenFileAsync(
             VaultItemViewModel item,
-            CancellationToken cancellationToken = default )
+            CancellationToken cancellationToken = default,
+            bool newWindow = false )
         {
             if( item.AsFile == null || OwnerWindow == null ) return;
 
@@ -1410,15 +1419,15 @@ namespace DeerCrypt.ViewModels
                 switch( viewerType )
                 {
                     case FileViewerType.Media:
-                        await OpenInMediaPlayerAsync( item );
+                        await OpenInMediaPlayerAsync( item, newWindow );
                         return;
 
                     case FileViewerType.Image:
-                        await OpenInImageViewerAsync( item );
+                        await OpenInImageViewerAsync( item, newWindow );
                         return;
 
                     case FileViewerType.Text:
-                        await OpenInTextEditorAsync( item );
+                        await OpenInTextEditorAsync( item, newWindow );
                         return;
 
                     case FileViewerType.External:
@@ -1429,13 +1438,13 @@ namespace DeerCrypt.ViewModels
                         switch( choice )
                         {
                             case OpenWithChoice.MediaPlayer:
-                                await OpenInMediaPlayerAsync( item );
+                                await OpenInMediaPlayerAsync( item, newWindow );
                                 return;
                             case OpenWithChoice.ImageViewer:
-                                await OpenInImageViewerAsync( item );
+                                await OpenInImageViewerAsync( item, newWindow );
                                 return;
                             case OpenWithChoice.TextEditor:
-                                await OpenInTextEditorAsync( item );
+                                await OpenInTextEditorAsync( item, newWindow );
                                 return;
                             case OpenWithChoice.External:
                                 break;   // fall through to the external open path below

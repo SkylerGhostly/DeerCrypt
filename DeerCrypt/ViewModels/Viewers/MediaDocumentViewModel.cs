@@ -72,7 +72,26 @@ namespace DeerCrypt.ViewModels.Viewers
         [NotifyPropertyChangedFor( nameof( SpeedText ) )]
         public partial float Speed { get; set; } = 1f;
 
-        public string SpeedText => $"{Speed:0.##}×";
+        public string SpeedText => IsSpeedBoosted ? "2× hold" : $"{Speed:0.##}×";
+
+        /// <summary>Space is being held: playing at 2× until it's released.</summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor( nameof( SpeedText ) )]
+        public partial bool IsSpeedBoosted { get; private set; }
+
+        public void BeginSpeedBoost( )
+        {
+            if( IsSpeedBoosted || Session is not { IsPlaying: true } s ) return;
+            IsSpeedBoosted = true;
+            s.SetRate( 2f );
+        }
+
+        public void EndSpeedBoost( )
+        {
+            if( !IsSpeedBoosted ) return;
+            IsSpeedBoosted = false;
+            Session?.SetRate( Speed );
+        }
 
         partial void OnVolumeChanged( int value )  => Session?.SetVolume( value );
         partial void OnIsMutedChanged( bool value ) => Session?.SetMute( value );
@@ -130,6 +149,7 @@ namespace DeerCrypt.ViewModels.Viewers
             PreviousCommand.NotifyCanExecuteChanged( );
             NextCommand.NotifyCanExecuteChanged( );
 
+            IsSpeedBoosted = false; // the new track starts at the chosen speed
             FileId    = item.Id;
             Title     = item.DisplayName;
             ErrorText = string.Empty;

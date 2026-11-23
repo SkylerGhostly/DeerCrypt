@@ -49,6 +49,7 @@ namespace DeerCrypt.ViewModels
             ExtractCommand.NotifyCanExecuteChanged( );
             MoveCommand.NotifyCanExecuteChanged( );
             OpenCommand.NotifyCanExecuteChanged( );
+            OpenInNewWindowCommand.NotifyCanExecuteChanged( );
         }
 
         [RelayCommand]
@@ -74,12 +75,21 @@ namespace DeerCrypt.ViewModels
 
         // Opening
 
-        private void OpenDocument( DocumentViewModel doc )
+        /// <summary>Viewers open in their own windows instead of tabs (Settings).</summary>
+        public bool OpenViewersInWindows => App.SettingsService.Settings.OpenViewersIn == "Windows";
+
+        private void OpenDocument( DocumentViewModel doc, bool inWindow = false )
         {
             doc.CloseRequested      += OnDocumentCloseRequested;
             doc.VaultChanged        += OnDocumentVaultChanged;
             doc.FullscreenRequested += OnDocumentFullscreenRequested;
             doc.PropertyChanged     += OnDocumentPropertyChanged;
+
+            if( inWindow )
+            {
+                ShowInWindow( doc, fullscreen: false );
+                return;
+            }
 
             Documents.Add( doc );
             OnPropertyChanged( nameof( HasDocuments ) );
@@ -187,6 +197,12 @@ namespace DeerCrypt.ViewModels
                 ActiveDocument = Documents.Count == 0 ? null : Documents [ System.Math.Clamp( index - 1, 0, Documents.Count - 1 ) ];
             OnPropertyChanged( nameof( HasDocuments ) );
 
+            return ShowInWindow( doc, fullscreen );
+        }
+
+        /// <summary>Shows a document (not in the tabs) in its own window.</summary>
+        private DocumentWindow ShowInWindow( DocumentViewModel doc, bool fullscreen )
+        {
             doc.IsPoppedOut = true;
             doc.IsActive    = true;
 
@@ -283,9 +299,9 @@ namespace DeerCrypt.ViewModels
             return list;
         }
 
-        private async Task OpenInImageViewerAsync( VaultItemViewModel item )
+        private async Task OpenInImageViewerAsync( VaultItemViewModel item, bool newWindow = false )
         {
-            if( TryActivateExisting( item.Id ) ) return;
+            if( !newWindow && TryActivateExisting( item.Id ) ) return;
 
             var images = SiblingsOfKind( item, FileTypeHelper.IsImage );
             var doc    = new ImageDocumentViewModel( Vault, images, images.IndexOf( item ) );
@@ -294,26 +310,26 @@ namespace DeerCrypt.ViewModels
                 var existing = CurrentItems.FirstOrDefault( i => i.Id == deleted.Id );
                 if( existing != null ) CurrentItems.Remove( existing );
             };
-            OpenDocument( doc );
+            OpenDocument( doc, newWindow || OpenViewersInWindows );
             await doc.LoadCurrentAsync( );
         }
 
-        private async Task OpenInMediaPlayerAsync( VaultItemViewModel item )
+        private async Task OpenInMediaPlayerAsync( VaultItemViewModel item, bool newWindow = false )
         {
-            if( TryActivateExisting( item.Id ) ) return;
+            if( !newWindow && TryActivateExisting( item.Id ) ) return;
 
             var playlist = SiblingsOfKind( item, FileTypeHelper.IsMedia );
             var doc      = new MediaDocumentViewModel( Vault, App.LibVLC, playlist, playlist.IndexOf( item ) );
-            OpenDocument( doc );
+            OpenDocument( doc, newWindow || OpenViewersInWindows );
             await doc.LoadCurrentAsync( );
         }
 
-        private async Task OpenInTextEditorAsync( VaultItemViewModel item )
+        private async Task OpenInTextEditorAsync( VaultItemViewModel item, bool newWindow = false )
         {
-            if( TryActivateExisting( item.Id ) ) return;
+            if( !newWindow && TryActivateExisting( item.Id ) ) return;
 
             var doc = new TextDocumentViewModel( Vault, item.AsFile!.Id, item.DisplayName );
-            OpenDocument( doc );
+            OpenDocument( doc, newWindow || OpenViewersInWindows );
             await doc.LoadAsync( );
         }
     }

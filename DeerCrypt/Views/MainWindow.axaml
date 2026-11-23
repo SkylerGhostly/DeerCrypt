@@ -651,7 +651,10 @@
                     <Border Grid.Row="0" IsVisible="{Binding HasDocuments}"
                             Background="{DynamicResource ChromeBackgroundBrush}"
                             Classes="divider-bottom" Padding="6,5,6,0">
-                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                        <!-- No scroll bar over the tabs: the wheel scrolls them sideways and the
+                             active tab is always brought into view -->
+                        <ScrollViewer x:Name="TabScroller"
+                                      HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
                             <StackPanel Orientation="Horizontal" Spacing="2" x:Name="TabStrip">
                                 <Button Classes="tab" Classes.active="{Binding IsBrowserActive}"
                                         Command="{Binding ShowBrowserCommand}" ToolTip.Tip="Files (Ctrl+Tab cycles tabs)">
@@ -889,6 +892,9 @@
                                 <ContextMenu>
                                     <MenuItem Header="Open" Command="{Binding OpenCommand}" InputGesture="Enter">
                                         <MenuItem.Icon><ic:SymbolIcon Symbol="Open" /></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Open in new window" Command="{Binding OpenInNewWindowCommand}" InputGesture="Ctrl+Enter">
+                                        <MenuItem.Icon><ic:SymbolIcon Symbol="WindowNew" /></MenuItem.Icon>
                                     </MenuItem>
                                     <MenuItem Header="Show in folder" Command="{Binding RevealSelectedCommand}"
                                               IsVisible="{Binding !ShowBreadcrumb}">

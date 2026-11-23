@@ -13,6 +13,12 @@
         /// </summary>
         public bool UseInternalViewer { get; set; } = true;
 
+        /// <summary>
+        /// Where the built-in viewers open: "Tabs" (inside the main window) or "Windows" (each in
+        /// its own window). Ctrl+click / Ctrl+Enter always opens a new window.
+        /// </summary>
+        public string OpenViewersIn { get; set; } = "Tabs";
+
         /// <summary>"System", "Dark", or "Light".</summary>
         public string Theme { get; set; } = "System";
 

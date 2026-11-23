@@ -47,6 +47,46 @@ namespace DeerCrypt.Views.Viewers
 
             // Tunnel so Space plays/pauses even when a toolbar button last had focus
             AddHandler( KeyDownEvent, OnTunnelKeyDown, RoutingStrategies.Tunnel );
+            AddHandler( KeyUpEvent, OnTunnelKeyUp, RoutingStrategies.Tunnel );
+            LostFocus += ( _, _ ) => { if( !IsKeyboardFocusWithin ) ReleaseSpace( ); };
+
+            _spaceHold    = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds( 350 ) };
+            _spaceHold.Tick += ( _, _ ) => { _spaceHold.Stop( ); if( _spaceDown ) _doc?.BeginSpeedBoost( ); };
+            _spaceRelease = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds( 60 ) };
+            _spaceRelease.Tick += ( _, _ ) => { _spaceRelease.Stop( ); ReleaseSpace( ); };
+        }
+
+        // Space: a tap plays/pauses; holding it plays at 2× until released.
+        // X11 may report a held key as a stream of release/press pairs (auto-repeat), so a release
+        // only counts once no press follows it within a moment.
+        private readonly DispatcherTimer _spaceHold;
+        private readonly DispatcherTimer _spaceRelease;
+        private bool _spaceDown;
+
+        private void PressSpace( )
+        {
+            if( _spaceRelease.IsEnabled ) { _spaceRelease.Stop( ); return; } // auto-repeat: still held
+            if( _spaceDown ) return;
+            _spaceDown = true;
+            _spaceHold.Start( );
+        }
+
+        private void ReleaseSpace( )
+        {
+            if( !_spaceDown ) return;
+            _spaceDown = false;
+            _spaceHold.Stop( );
+            _spaceRelease.Stop( );
+            if( _doc?.IsSpeedBoosted == true ) _doc.EndSpeedBoost( );
+            else _doc?.Session?.PlayPause( );
+        }
+
+        private void OnTunnelKeyUp( object? sender, KeyEventArgs e )
+        {
+            if( e.Key != Key.Space || !_spaceDown ) return;
+            _spaceRelease.Stop( );
+            _spaceRelease.Start( );
+            e.Handled = true;
         }
 
         protected override void OnDataContextChanged( EventArgs e )
@@ -67,6 +107,10 @@ namespace DeerCrypt.Views.Viewers
         protected override void OnDetachedFromVisualTree( VisualTreeAttachmentEventArgs e )
         {
             // Release the native surface before it is destroyed
+            _spaceDown = false;
+            _spaceHold.Stop( );
+            _spaceRelease.Stop( );
+            _doc?.EndSpeedBoost( );
             _videoView.MediaPlayer = null;
             base.OnDetachedFromVisualTree( e );
         }
@@ -90,7 +134,8 @@ namespace DeerCrypt.Views.Viewers
 
             switch( e.Key )
             {
-                case Key.Space or Key.K: s.PlayPause( ); break;
+                case Key.Space:          PressSpace( ); break;
+                case Key.K:              s.PlayPause( ); break;
                 case Key.Left:           s.SkipBy( -5_000 ); break;
                 case Key.Right:          s.SkipBy( +5_000 ); break;
                 case Key.J:              s.SkipBy( -10_000 ); break;

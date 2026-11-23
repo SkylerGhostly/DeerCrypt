@@ -42,6 +42,66 @@ namespace DeerCrypt.Views
             WireSidebar( );
             WireTabStrip( );
             WireColumnResizers( );
+            WireMouseNavigation( );
+        }
+
+        private void OnBrowserPropertyChanged( object? sender, System.ComponentModel.PropertyChangedEventArgs e )
+        {
+            if( e.PropertyName == nameof( VaultBrowserViewModel.ActiveDocument ) ) RevealActiveTab( );
+        }
+
+        // Mouse back/forward
+
+        private DateTime _lastTiltNavigation;
+        private double   _tiltAccumulated;
+        private DateTime _lastTiltEvent;
+
+        /// <summary>
+        /// Mouse Back/Forward buttons and tilting the wheel left/right navigate like a browser.
+        /// In a viewer tab, Back returns to the Files tab.
+        /// </summary>
+        private void WireMouseNavigation( )
+        {
+            AddHandler( PointerPressedEvent, ( _, e ) =>
+            {
+                if( _currentBrowser is not { } browser ) return;
+                var kind = e.GetCurrentPoint( this ).Properties.PointerUpdateKind;
+                if( kind == PointerUpdateKind.XButton1Pressed )
+                {
+                    if( !browser.IsBrowserActive ) browser.ShowBrowserCommand.Execute( null );
+                    else if( browser.NavigateBackCommand.CanExecute( null ) ) browser.NavigateBackCommand.Execute( null );
+                    e.Handled = true;
+                }
+                else if( kind == PointerUpdateKind.XButton2Pressed )
+                {
+                    if( browser.IsBrowserActive && browser.NavigateForwardCommand.CanExecute( null ) )
+                        browser.NavigateForwardCommand.Execute( null );
+                    e.Handled = true;
+                }
+            }, RoutingStrategies.Tunnel, handledEventsToo: true );
+
+            // Wheel tilt (and sideways touchpad swipes) over the file list. A tilt repeats while
+            // held, so one gesture navigates once: sum the sideways movement, then pause briefly.
+            this.FindControl<Grid>( "BrowserPane" )?.AddHandler( PointerWheelChangedEvent, ( _, e ) =>
+            {
+                if( _currentBrowser is not { } browser ) return;
+                if( Math.Abs( e.Delta.X ) <= Math.Abs( e.Delta.Y ) ) return;
+                e.Handled = true;
+
+                var now = DateTime.UtcNow;
+                if( ( now - _lastTiltEvent ).TotalMilliseconds > 300 ) _tiltAccumulated = 0;
+                _lastTiltEvent = now;
+                if( ( now - _lastTiltNavigation ).TotalMilliseconds < 700 ) return;
+
+                _tiltAccumulated += e.Delta.X;
+                if( Math.Abs( _tiltAccumulated ) < 1.0 ) return;
+
+                // Tilting left (positive X) goes back, right goes forward
+                var command = _tiltAccumulated > 0 ? browser.NavigateBackCommand : browser.NavigateForwardCommand;
+                _tiltAccumulated     = 0;
+                _lastTiltNavigation  = now;
+                if( command.CanExecute( null ) ) command.Execute( null );
+            }, RoutingStrategies.Tunnel, handledEventsToo: true );
         }
 
         // List scroll position across reloads 
@@ -116,6 +176,31 @@ namespace DeerCrypt.Views
                     }
                 }
             }, RoutingStrategies.Tunnel );
+
+            // The wheel scrolls the tabs sideways (the strip has no visible scroll bar)
+            if( this.FindControl<ScrollViewer>( "TabScroller" ) is { } tabScroller )
+            {
+                tabScroller.AddHandler( PointerWheelChangedEvent, ( _, e ) =>
+                {
+                    double delta = Math.Abs( e.Delta.X ) > Math.Abs( e.Delta.Y ) ? e.Delta.X : e.Delta.Y;
+                    if( delta == 0 ) return;
+                    double max = Math.Max( 0, tabScroller.Extent.Width - tabScroller.Viewport.Width );
+                    tabScroller.Offset = new Vector( Math.Clamp( tabScroller.Offset.X - delta * 60, 0, max ), 0 );
+                    e.Handled = true;
+                }, RoutingStrategies.Tunnel );
+            }
+        }
+
+        /// <summary>Scrolls the tab strip so the active tab is fully visible.</summary>
+        private void RevealActiveTab( )
+        {
+            Dispatcher.UIThread.Post( ( ) =>
+            {
+                if( this.FindControl<StackPanel>( "TabStrip" ) is not { } strip ) return;
+                var active = strip.GetVisualDescendants( ).OfType<Button>( )
+                                  .FirstOrDefault( b => b.Classes.Contains( "tab" ) && b.Classes.Contains( "active" ) );
+                active?.BringIntoView( );
+            }, DispatcherPriority.Loaded );
         }
 
         private void OnTabMenuClick( object? sender, RoutedEventArgs e )
@@ -346,11 +431,13 @@ namespace DeerCrypt.Views
                     _currentBrowser.ItemsReplacing -= OnItemsReplacing;
                     _currentBrowser.ItemsReplaced  -= OnItemsReplaced;
                     _currentBrowser.ThumbnailsReset -= OnThumbnailsReset;
+                    _currentBrowser.PropertyChanged -= OnBrowserPropertyChanged;
                 }
                 _currentBrowser = vm.VaultBrowser;
                 _currentBrowser.ItemsReplacing += OnItemsReplacing;
                 _currentBrowser.ItemsReplaced  += OnItemsReplaced;
                 _currentBrowser.ThumbnailsReset += OnThumbnailsReset;
+                _currentBrowser.PropertyChanged += OnBrowserPropertyChanged;
                 WireFileList( );
 
                 // FocusRenameBox must be re-assigned for each new VM instance.
@@ -399,9 +486,24 @@ namespace DeerCrypt.Views
             };
 
             // Double-click to navigate into directories (or ".." to go up)
-            list.DoubleTapped += async ( _, _ ) =>
+            list.DoubleTapped += async ( _, e ) =>
             {
                 if( _currentBrowser is not { } browser ) return;
+
+                // Ctrl+double-click opens the file under the pointer in a new window. (Ctrl+click
+                // also toggles selection, so use the clicked item rather than the selection.)
+                if( e.KeyModifiers.HasFlag( KeyModifiers.Control ) )
+                {
+                    var clicked = ( e.Source as Visual )?.GetSelfAndVisualAncestors( )
+                        .OfType<Control>( ).Select( c => c.DataContext ).OfType<VaultItemViewModel>( ).FirstOrDefault( );
+                    if( clicked is { IsFile: true } )
+                    {
+                        browser.SelectedFile = clicked;
+                        await browser.OpenFileAsync( clicked, newWindow: true );
+                        return;
+                    }
+                }
+
                 if( list.SelectedItem is not VaultItemViewModel item ) return;
 
                 if( item.IsParentDir )
@@ -425,6 +527,12 @@ namespace DeerCrypt.Views
                         && browser.OpenCommand.CanExecute( null ) )
                     {
                         await browser.OpenCommand.ExecuteAsync( null );
+                        e.Handled = true;
+                    }
+                    else if( e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.Control
+                             && browser.OpenInNewWindowCommand.CanExecute( null ) )
+                    {
+                        await browser.OpenInNewWindowCommand.ExecuteAsync( null );
                         e.Handled = true;
                     }
                     else if( e.Key == Key.Back && browser.NavigateUpCommand.CanExecute( null ) )

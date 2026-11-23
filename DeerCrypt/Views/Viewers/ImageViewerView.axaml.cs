@@ -43,6 +43,7 @@ namespace DeerCrypt.Views.Viewers
         private bool   _pendingZoomCorrection;
         private double _zoomFx, _zoomFy;
         private Point  _zoomMouseInScroll;
+        private int    _extentHeals; // times in a row the scroll extent was found stale and re-measured
 
         public ImageViewerView( )
         {
@@ -234,23 +235,6 @@ namespace DeerCrypt.Views.Viewers
             _vm.Zoom = Math.Clamp( z, ImageDocumentViewModel.ZoomMin, ImageDocumentViewModel.ZoomMax );
             UpdateContainerSize( );
             _scroll.InvalidateArrange( );
-            DebugLayout( "fit" );
-        }
-
-        /// <summary>Debug builds only: prints the viewer's geometry to the terminal (for layout bug reports).</summary>
-        [System.Diagnostics.Conditional( "DEBUG" )]
-        private void DebugLayout( string reason )
-        {
-            Dispatcher.UIThread.Post( ( ) =>
-            {
-                if( _scroll == null || _img == null || _vm == null ) return;
-                var c = _img.TranslatePoint( new Point( _img.Bounds.Width / 2, _img.Bounds.Height / 2 ), _scroll );
-                Console.WriteLine( $"[image-viewer] {reason}: file={_vm.Title} natural={_vm.NaturalPixelSize.Width}x{_vm.NaturalPixelSize.Height} " +
-                                   $"zoom={_vm.Zoom:F3} viewport={_scroll.Viewport.Width:F0}x{_scroll.Viewport.Height:F0} " +
-                                   $"extent={_scroll.Extent.Width:F0}x{_scroll.Extent.Height:F0} offset={_scroll.Offset.X:F0},{_scroll.Offset.Y:F0} " +
-                                   $"image={_img.Bounds.Width:F0}x{_img.Bounds.Height:F0} imageCentre={c?.X:F0},{c?.Y:F0} " +
-                                   $"visible={IsEffectivelyVisible} scaling={TopLevel.GetTopLevel( this )?.RenderScaling}" );
-            }, DispatcherPriority.Background );
         }
 
         private void ToggleFitActual( )
@@ -293,13 +277,47 @@ namespace DeerCrypt.Views.Viewers
 
         private void OnScrollLayoutUpdated( object? sender, EventArgs e )
         {
-            if( !_pendingZoomCorrection || _scroll == null || _vm == null ) return;
-            _pendingZoomCorrection = false;
+            if( _scroll == null || _vm == null || _vm.NaturalPixelSize.Width <= 0 ) return;
 
             var shown = DisplaySize( _vm.Zoom );
             var vp    = _scroll.Viewport;
             double contW = Math.Max( shown.Width, vp.Width );
             double contH = Math.Max( shown.Height, vp.Height );
+
+            // Self-check: the scroll extent must be the image's size at the current zoom (the
+            // container is sized to the image exactly). On some setups (reported on KDE/XWayland
+            // at 109% scaling) the presenter kept the extent from before a fit (the full-size
+            // image), so the image was centred in an area taller than the view and only its top
+            // half showed. Re-measure until it agrees, then centre.
+            if( vp.Width > 0 && ( Math.Abs( _scroll.Extent.Width - shown.Width ) > 1.5 || Math.Abs( _scroll.Extent.Height - shown.Height ) > 1.5 ) )
+            {
+                if( _extentHeals++ < 3 )
+                {
+                    _container?.InvalidateMeasure( );
+                    ( _scroll.Presenter as Control )?.InvalidateMeasure( );
+                    _scroll.InvalidateMeasure( );
+                    if( _fitMode ) _pendingZoomCorrection = true;
+                    return;
+                }
+
+                // Still stale: centre on where the image actually is on screen instead
+                if( _fitMode && _container != null && _container.TranslatePoint(
+                        new Point( _container.Bounds.Width / 2, _container.Bounds.Height / 2 ), _scroll ) is { } actual )
+                {
+                    _pendingZoomCorrection = false;
+                    var target = _scroll.Offset + new Vector( actual.X - vp.Width / 2, actual.Y - vp.Height / 2 );
+                    if( ( target - _scroll.Offset ).Length > 0.5 ) _scroll.Offset = target;
+                    return;
+                }
+            }
+            else
+            {
+                _extentHeals = 0;
+            }
+
+            if( !_pendingZoomCorrection ) return;
+            _pendingZoomCorrection = false;
+
             double left  = ( contW - shown.Width ) / 2.0;
             double top   = ( contH - shown.Height ) / 2.0;
 

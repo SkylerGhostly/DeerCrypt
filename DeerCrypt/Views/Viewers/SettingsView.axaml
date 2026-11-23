@@ -111,6 +111,7 @@
                     <TextBlock Text="Opening files" />
                 </StackPanel>
                 <Border Classes="card">
+                    <StackPanel>
                     <Grid Classes="setting" ColumnDefinitions="*,Auto">
                         <StackPanel>
                             <TextBlock Classes="setting-title" Text="Use the built-in viewers" />
@@ -120,6 +121,24 @@
                         <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" OnContent="" OffContent=""
                                       IsChecked="{Binding Browser.UseInternalViewer}" />
                     </Grid>
+                    <Border Classes="row-divider" />
+                    <Grid Classes="setting" ColumnDefinitions="*,Auto">
+                        <StackPanel>
+                            <TextBlock Classes="setting-title" Text="Open viewers in" />
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Classes="setting-help" VerticalAlignment="Center"
+                                           Text="Tabs keep everything in one window. A new window, either way:" />
+                                <Border Classes="keycap"><TextBlock Text="Ctrl+click" FontSize="11" /></Border>
+                                <Border Classes="keycap"><TextBlock Text="Ctrl+Enter" FontSize="11" /></Border>
+                            </StackPanel>
+                        </StackPanel>
+                        <ComboBox Grid.Column="1" Classes="setting" SelectedIndex="{Binding ViewerPlacementIndex}"
+                                  IsEnabled="{Binding Browser.UseInternalViewer}">
+                            <ComboBoxItem Content="Tabs" />
+                            <ComboBoxItem Content="Separate windows" />
+                        </ComboBox>
+                    </Grid>
+                    </StackPanel>
                 </Border>
             </StackPanel>
 
