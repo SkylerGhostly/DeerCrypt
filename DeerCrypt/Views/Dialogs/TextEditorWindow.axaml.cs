@@ -358,8 +358,9 @@ namespace DeerCrypt.Views.Dialogs
 
             var inputVm = new InputDialogViewModel
             {
-                Title       = "Go to Line",
-                Prompt      = "Line number:",
+                Title       = "Go to line",
+                Prompt      = $"Enter a line number from 1 to {_vm.LineCount}.",
+                Icon        = FluentIcons.Common.Symbol.TextNumberList,
                 Placeholder = $"1 \u2013 {_vm.LineCount}",
                 ConfirmText = "Go",
                 Validator   = s =>

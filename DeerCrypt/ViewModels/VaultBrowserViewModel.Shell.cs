@@ -35,6 +35,18 @@ namespace DeerCrypt.ViewModels
     {
         private const int RecentlyAddedLimit = 200;
 
+        /// <summary>Background operations for this vault (shown in the activity bar).</summary>
+        public ActivityCenter Activities { get; } = new( );
+
+        /// <summary>
+        /// Refreshes the tree, the visible list, and the storage summary after background work
+        /// changed the vault - without yanking the user out of the folder, view, or search they're in.
+        /// </summary>
+        private async Task AfterVaultChangedAsync( )
+        {
+            await ReloadTreeAsync( );
+            await RefreshVaultInfoAsync( );
+        }
         public ObservableCollection<SidebarItem> PrimaryNav { get; } =
         [
             new( SidebarKind.Vault,         "Vault",          Symbol.Home ),
@@ -135,12 +147,12 @@ namespace DeerCrypt.ViewModels
 
         private async Task LoadSmartViewItemsAsync( SidebarKind kind, CancellationToken ct )
         {
-            CurrentItems.Clear( );
-
+            int version = BeginLoad( );
             try
             {
                 IReadOnlyList<VaultEntry> all = await Vault.ListRecursiveAsync( null, ct );
                 ct.ThrowIfCancellationRequested( );
+                if( !IsCurrentLoad( version ) ) return;
 
                 IEnumerable<VaultEntry> files = kind switch
                 {
@@ -166,15 +178,17 @@ namespace DeerCrypt.ViewModels
                     items.Add( vm );
                 }
 
-                foreach( var item in GetSortedItems( items ) )
-                    CurrentItems.Add( item );
-
+                ReplaceItems( GetSortedItems( items ) );
                 StatusMessage = string.Empty;
             }
             catch( OperationCanceledException ) { throw; }
             catch( Exception ex )
             {
-                StatusMessage = $"Error loading items: {ex.Message}";
+                if( IsCurrentLoad( version ) ) StatusMessage = $"Couldn't load items: {ex.Message}";
+            }
+            finally
+            {
+                EndLoad( version );
             }
         }
 
@@ -296,9 +310,57 @@ namespace DeerCrypt.ViewModels
             }
         }
 
+        // Loading
+
+        // Every list load (folder, library view, search) gets a version number. The list on
+        // screen is only replaced once the new results are in, and results from a load that
+        // was superseded (the user clicked elsewhere meanwhile) are thrown away.
+        private int _loadVersion;
+
+        /// <summary>A list load is in flight.</summary>
+        [ObservableProperty]
+        public partial bool IsLoading { get; set; }
+
+        /// <summary>Shown only if a load takes long enough to notice, so fast folders don't flicker.</summary>
+        [ObservableProperty]
+        public partial bool ShowLoadingBar { get; set; }
+
+        private int BeginLoad( )
+        {
+            int version = ++_loadVersion;
+            IsLoading = true;
+            _ = RevealLoadingBarAsync( version );
+            return version;
+        }
+
+        private bool IsCurrentLoad( int version ) => version == _loadVersion;
+
+        private void EndLoad( int version )
+        {
+            if( version != _loadVersion ) return;
+            IsLoading      = false;
+            ShowLoadingBar = false;
+            RaiseListStateChanged( );
+        }
+
+        private async Task RevealLoadingBarAsync( int version )
+        {
+            await Task.Delay( 150 );
+            if( version == _loadVersion && IsLoading ) ShowLoadingBar = true;
+        }
+
+        /// <summary>Swaps the visible list for freshly loaded items in one go.</summary>
+        private void ReplaceItems( IEnumerable<VaultItemViewModel> items )
+        {
+            CurrentItems.Clear( );
+            foreach( var item in items )
+                CurrentItems.Add( item );
+        }
+
         // Empty states
 
-        public bool IsCurrentViewEmpty => CurrentItems.Count == 0;
+        /// <summary>Never true while loading: an unfinished load must not look like an empty folder.</summary>
+        public bool IsCurrentViewEmpty => !IsLoading && CurrentItems.Count == 0;
 
         public string EmptyStateTitle =>
             IsSearchActive         ? "No matches"
@@ -364,11 +426,14 @@ namespace DeerCrypt.ViewModels
                     SelectedFile = null;
                 }
                 RaiseListStateChanged( );
+                if( e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset || SelectedItems.Count == 0 )
+                    ScheduleInspectorUpdate( );
             };
             SelectedItems.CollectionChanged += ( _, _ ) =>
             {
                 OnPropertyChanged( nameof( HasSelection ) );
                 OnPropertyChanged( nameof( SelectionText ) );
+                ScheduleInspectorUpdate( );
             };
         }
     }

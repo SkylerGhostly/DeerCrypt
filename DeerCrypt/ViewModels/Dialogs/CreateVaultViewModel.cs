@@ -67,21 +67,21 @@ namespace DeerCrypt.ViewModels.Dialogs
 
         public IBrush PasswordStrengthBrush => PasswordStrength switch
         {
-            1 => new SolidColorBrush( Color.Parse( "#E05252" ) ),
-            2 => new SolidColorBrush( Color.Parse( "#FF9800" ) ),
-            3 => new SolidColorBrush( Color.Parse( "#8BC34A" ) ),
-            4 => new SolidColorBrush( Color.Parse( "#4CAF50" ) ),
+            1 => new SolidColorBrush( Color.Parse( "#E0574A" ) ),
+            2 => new SolidColorBrush( Color.Parse( "#E8A23C" ) ),
+            3 => new SolidColorBrush( Color.Parse( "#7DBB52" ) ),
+            4 => new SolidColorBrush( Color.Parse( "#3FAE7C" ) ),
             _ => Brushes.Transparent
         };
 
         public IBrush PasswordMatchBrush =>
             PasswordsMatch
-                ? new SolidColorBrush( Color.Parse( "#4CAF50" ) )
-                : new SolidColorBrush( Color.Parse( "#E05252" ) );
+                ? new SolidColorBrush( Color.Parse( "#3FAE7C" ) )
+                : new SolidColorBrush( Color.Parse( "#E0574A" ) );
 
         public string PasswordMatchText =>
             ConfirmNotEmpty
-                ? ( PasswordsMatch ? "Passwords match" : "Passwords do not match" )
+                ? ( PasswordsMatch ? "Passwords match" : "Passwords don't match" )
                 : string.Empty;
 
         // Partial hooks 

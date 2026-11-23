@@ -41,6 +41,14 @@
         IReadOnlyList<VaultEntry> Files );
 
     /// <summary>
+    /// Recursive totals for one directory: everything beneath it, not counting itself.
+    /// </summary>
+    public sealed record DirectoryStats(
+        int FileCount,
+        int FolderCount,
+        long TotalSize );
+
+    /// <summary>
     /// Aggregate vault statistics for display in a status bar or info panel.
     /// </summary>
     public sealed record VaultInfo(

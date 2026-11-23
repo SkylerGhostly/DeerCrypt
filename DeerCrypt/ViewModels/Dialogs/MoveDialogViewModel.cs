@@ -20,6 +20,10 @@ namespace DeerCrypt.ViewModels.Dialogs
         /// <summary>Set by ConfirmCommand. Null means the dialog was cancelled.</summary>
         public string? ConfirmedTargetId { get; private set; }
 
+        public string Subtitle => _movingIds.Count == 1
+            ? "Choose a folder for the selected item."
+            : $"Choose a folder for the {_movingIds.Count} selected items.";
+
         [ObservableProperty]
         [NotifyCanExecuteChangedFor( nameof( NavigateToParentCommand ) )]
         public partial bool CanNavigateBack { get; set; }
@@ -30,7 +34,7 @@ namespace DeerCrypt.ViewModels.Dialogs
         /// <summary>Called from code-behind after the window opens.</summary>
         public async Task InitializeAsync( CancellationToken ct = default )
         {
-            Breadcrumb.Add( new BreadcrumbSegment( vault.RootDirectoryId, "Vault" ) );
+            Breadcrumb.Add( new BreadcrumbSegment( vault.RootDirectoryId, "Vault", IsFirst: true ) );
             await LoadDirsAsync( vault.RootDirectoryId, ct );
         }
 

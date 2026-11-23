@@ -1,53 +1,48 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ic="using:FluentIcons.Avalonia"
         xmlns:vm="using:DeerCrypt.ViewModels.Dialogs"
         x:Class="DeerCrypt.Views.Dialogs.CompactDialog"
         x:DataType="vm:CompactDialogViewModel"
-        Background="{DynamicResource MainBackgroundBrush}"
+        Background="{DynamicResource AppBackgroundBrush}"
         Title="Compact vault"
-        Width="400"
+        Width="440"
         SizeToContent="Height"
         CanResize="False"
         WindowStartupLocation="CenterOwner">
 
-    <StackPanel Margin="24" Spacing="14">
+    <StackPanel>
+        <StackPanel Margin="24,22,24,20" Spacing="16">
+            <Grid ColumnDefinitions="Auto,*">
+                <Border Classes="dialog-icon">
+                    <ic:SymbolIcon Symbol="Broom" />
+                </Border>
+                <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="Compact vault" Classes="dialog-title" />
+                    <TextBlock Text="{Binding InfoText}" Classes="dialog-subtitle" />
+                </StackPanel>
+            </Grid>
 
-        <TextBlock Text="Compact Vault"
-                   FontSize="18"
-                   FontWeight="SemiBold"
-                   Margin="0,0,0,4" />
+            <Border Classes="stat" IsVisible="{Binding HasSpaceToReclaim}">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="Space you'll get back" Classes="caption" />
+                    <TextBlock Text="{Binding ReclaimableText}" Classes="stat-value" />
+                </StackPanel>
+            </Border>
 
-        <TextBlock TextWrapping="Wrap"
-                   Text="{Binding InfoText}" />
-
-        <TextBlock TextWrapping="Wrap"
-                   Opacity="0.55"
-                   FontSize="12"
-                   Text="Compacting reclaims disk space from deleted files. On large vaults this may take some time." />
-
-        <!-- Progress bar - only visible while compacting -->
-        <ProgressBar Minimum="0"
-                     Maximum="1"
-                     Value="{Binding Progress}"
-                     IsVisible="{Binding IsCompacting}" />
-
-        <StackPanel Orientation="Horizontal"
-                    HorizontalAlignment="Right"
-                    Spacing="8"
-                    Margin="0,6,0,0">
-            <Button Content="Cancel"
-                    Click="OnCancelClicked"
-                    IsVisible="{Binding !IsCompacting}" />
-            <Button Content="Compact now"
-                    Command="{Binding CompactCommand}"
-                    Classes="accent"
-                    IsDefault="True"
-                    IsVisible="{Binding !IsCompacting}" />
-            <TextBlock Text="Compacting, please wait..."
-                       VerticalAlignment="Center"
-                       IsVisible="{Binding IsCompacting}"
-                       Opacity="0.65" />
+            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasSpaceToReclaim}">
+                <ic:SymbolIcon Symbol="Info" FontSize="14" Foreground="{DynamicResource TextMutedBrush}" />
+                <TextBlock Text="Runs in the background so you can keep working. Large vaults can take a while."
+                           Classes="caption" TextWrapping="Wrap" MaxWidth="360" />
+            </StackPanel>
         </StackPanel>
 
+        <Border Classes="dialog-footer">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button Classes="secondary" Content="Cancel" IsCancel="True" Click="OnCancelClicked" />
+                <Button Classes="primary" Content="Compact now" IsDefault="True"
+                        IsEnabled="{Binding HasSpaceToReclaim}" Click="OnConfirmClicked" />
+            </StackPanel>
+        </Border>
     </StackPanel>
 </Window>

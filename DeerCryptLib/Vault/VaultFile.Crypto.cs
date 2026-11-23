@@ -28,7 +28,10 @@ namespace DeerCryptLib.Vault
             int chunkIndex,
             CancellationToken cancellationToken )
         {
-            byte [ ]? encrypted =  await ReadVaultChunkAsync( fileId, chunkIndex, cancellationToken )
+            // Read + decrypt under the gate (key material is only used while it is held)
+            using var lease = await EnterReadAsync( cancellationToken );
+            var db = lease.Db;
+            byte [ ]? encrypted =  await ReadVaultChunkAsync( db, fileId, chunkIndex, cancellationToken )
                 ?? throw new VaultCorruptException( $"Chunk {chunkIndex} of file '{fileId}' is missing from the vault." );
             using MemoryStream output = new( );
             await DecryptChunkToStreamAsync( encrypted, output, cancellationToken );

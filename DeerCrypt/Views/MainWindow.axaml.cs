@@ -576,36 +576,23 @@ namespace DeerCrypt.Views
                 tb.SelectAll( );
         }
 
+        private bool _closeConfirmed;
+
         protected override async void OnClosing( WindowClosingEventArgs e )
         {
-            if( DataContext is MainViewModel { IsVaultOpen: true } vm )
+            if( !_closeConfirmed && DataContext is MainViewModel { IsVaultOpen: true } vm )
             {
-                // Cancel the close immediately and handle it asynchronously
+                // Cancel the close, lock the vault cleanly (asks only if work would be lost), then close
                 e.Cancel = true;
-
-                var confirmVm = new ConfirmDialogViewModel
+                if( await vm.CloseForExitAsync( ) )
                 {
-                    Title       = "Close DeerCrypt",
-                    Message     = "A vault is currently open. Close anyway?",
-                    Detail      = "The vault will be locked before the application exits.",
-                    ConfirmText = "Close",
-                    CancelText  = "Cancel"
-                };
-
-                bool? result = await new ConfirmDialog { DataContext = confirmVm }
-                    .ShowDialog<bool?>(this);
-
-                if( result == true )
-                {
-                    vm.IsVaultOpen = false; // Update VM state immediately to prevent reentrancy issues
-                    await _vaultService.CloseAsync( );
+                    _closeConfirmed = true;
                     Close( );
                 }
+                return;
             }
-            else
-            {
-                base.OnClosing( e );
-            }
+
+            base.OnClosing( e );
         }
 
         private static VaultItemViewModel? GetHoveredItem( ListBox _, Control? element )
@@ -644,6 +631,5 @@ namespace DeerCrypt.Views
                 await browser.CommitRenameAsync( item );
         }
 
-        private readonly VaultService _vaultService = App.VaultService;
     }
 }

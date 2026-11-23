@@ -13,6 +13,9 @@ namespace DeerCryptLib.Vault
         /// </summary>
         public async Task<VaultInfo> GetVaultInfoAsync( CancellationToken cancellationToken = default )
         {
+            using var lease = await EnterReadAsync( cancellationToken );
+            var db = lease.Db;
+
             const string sql = """
                 SELECT
                     (SELECT COUNT(*)                        FROM vault_files)       AS total_files,
@@ -20,16 +23,18 @@ namespace DeerCryptLib.Vault
                     (SELECT COALESCE(SUM(original_size), 0) FROM vault_files)       AS total_size
                 """;
 
-            await using SqliteCommand    cmd    = new(sql, _connection);
+            await using SqliteCommand    cmd    = new(sql, db);
             await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
             await reader.ReadAsync( cancellationToken );
 
             int  totalFiles       = (int)(long)reader["total_files"];
             int  totalDirectories = (int)(long)reader["total_directories"];
             long totalSize        = (long)reader["total_size"];
-            long vaultFileSize    = new FileInfo(_vaultPath).Length;
+            // While open in WAL mode, recent changes live in the -wal file until checkpointed
+            long vaultFileSize    = new FileInfo(_vaultPath).Length
+                                  + ( File.Exists( _vaultPath + "-wal" ) ? new FileInfo( _vaultPath + "-wal" ).Length : 0 );
 
-            byte[]?  createdAtBytes = await ReadMetaBlobAsync(_connection, MetaCreatedAt, cancellationToken);
+            byte[]?  createdAtBytes = await ReadMetaBlobAsync(db, MetaCreatedAt, cancellationToken);
             DateTime createdAt      = createdAtBytes != null
                 ? DateTime.Parse(
                     System.Text.Encoding.UTF8.GetString(createdAtBytes),
@@ -59,7 +64,9 @@ namespace DeerCryptLib.Vault
             CancellationToken cancellationToken = default )
         {
             // How much work is there to do?
-            long freePages = await GetFreePageCountAsync(cancellationToken);
+            long freePages;
+            using( var lease = await EnterWriteAsync( cancellationToken ) )
+                freePages = await GetFreePageCountAsync( lease.Db, cancellationToken );
 
             if( freePages == 0 )
             {
@@ -72,13 +79,19 @@ namespace DeerCryptLib.Vault
             {
                 cancellationToken.ThrowIfCancellationRequested( );
 
-                await ExecuteNonQueryAsync(
-                    _connection,
-                    $"PRAGMA incremental_vacuum({maxPagesPerStep})",
-                    cancellationToken );
+                // One step per gate acquisition so other work can interleave
+                long remaining;
+                using( var lease = await EnterWriteAsync( cancellationToken ) )
+                {
+                    var db = lease.Db;
+                    await ExecuteNonQueryAsync(
+                        db,
+                        $"PRAGMA incremental_vacuum({maxPagesPerStep})",
+                        cancellationToken );
 
-                // Check how many free pages remain
-                long remaining = await GetFreePageCountAsync(cancellationToken);
+                    // Check how many free pages remain
+                    remaining = await GetFreePageCountAsync( db, cancellationToken );
+                }
 
                 long reclaimed = totalToReclaim - remaining;
                 progress?.Report( Math.Min( 1.0, (double)reclaimed / totalToReclaim ) );
@@ -93,9 +106,9 @@ namespace DeerCryptLib.Vault
             progress?.Report( 1.0 );
         }
 
-        private async Task<long> GetFreePageCountAsync( CancellationToken cancellationToken )
+        private async Task<long> GetFreePageCountAsync( SqliteConnection db, CancellationToken cancellationToken )
         {
-            await using SqliteCommand cmd = new("PRAGMA freelist_count", _connection);
+            await using SqliteCommand cmd = new("PRAGMA freelist_count", db);
             object? result = await cmd.ExecuteScalarAsync(cancellationToken);
             return result is long count ? count : 0;
         }
@@ -111,7 +124,10 @@ namespace DeerCryptLib.Vault
             FROM   pragma_freelist_count(), pragma_page_size()
             """;
 
-            await using SqliteCommand cmd = new(sql, _connection);
+            using var lease = await EnterReadAsync( cancellationToken );
+            var db = lease.Db;
+
+            await using SqliteCommand cmd = new(sql, db);
             object? result = await cmd.ExecuteScalarAsync(cancellationToken);
             return result is long bytes ? bytes : 0;
         }
@@ -121,30 +137,74 @@ namespace DeerCryptLib.Vault
         /// orphaned chunks, files with wrong chunk counts, etc.
         /// Returns a list of issues found, empty if the vault is healthy.
         /// </summary>
+        public Task<IReadOnlyList<string>> CheckIntegrityAsync(
+            CancellationToken cancellationToken = default )
+            => CheckIntegrityAsync( null, cancellationToken );
+
+        /// <summary>
+        /// Checks the vault for internal consistency issues - files whose stored chunk count
+        /// doesn't match the chunks present, files with no chunks, and orphaned chunks.
+        /// Works through files in batches on a reader connection, so it never blocks browsing
+        /// or writes, and reports 0.0-1.0 progress. Returns the issues found (empty if healthy).
+        /// </summary>
         public async Task<IReadOnlyList<string>> CheckIntegrityAsync(
+            IProgress<double>? progress,
             CancellationToken cancellationToken = default )
         {
+            const int BatchSize = 2000;
             List<string> issues = [];
 
-            // Check for files where actual chunk count doesn't match stored chunk_count
-            const string chunkCountSql = """
-                SELECT f.id, f.name, f.chunk_count, COUNT(c.chunk_index) AS actual_count
-                FROM   vault_files f
-                LEFT   JOIN vault_chunks c ON c.file_id = f.id
-                GROUP  BY f.id
-                HAVING f.chunk_count != actual_count
-                """;
-
-            await using SqliteCommand cmd1 = new(chunkCountSql, _connection);
-            await using SqliteDataReader r1 = await cmd1.ExecuteReaderAsync(cancellationToken);
-            while( await r1.ReadAsync( cancellationToken ) )
+            long totalFiles;
+            using( var lease = await EnterReadAsync( cancellationToken ) )
             {
-                issues.Add(
-                    $"File '{r1 [ "name" ]}' (ID: {r1 [ "id" ]}) declares " +
-                    $"{r1 [ "chunk_count" ]} chunks but has {r1 [ "actual_count" ]}." );
+                await using SqliteCommand count = new( "SELECT COUNT(*) FROM vault_files", lease.Db );
+                totalFiles = (long)( await count.ExecuteScalarAsync( cancellationToken ) ?? 0L );
             }
 
-            // Check for orphaned chunks with no parent file
+            // 1. Per-file chunk counts, a batch at a time (90% of the progress bar)
+            const string batchSql = """
+                SELECT f.rowid AS rid, f.id, f.name, f.chunk_count,
+                       (SELECT COUNT(*) FROM vault_chunks c WHERE c.file_id = f.id) AS actual_count
+                FROM   vault_files f
+                WHERE  f.rowid > @after
+                ORDER  BY f.rowid
+                LIMIT  @limit
+                """;
+
+            long after = long.MinValue;
+            long checkedFiles = 0;
+            while( true )
+            {
+                cancellationToken.ThrowIfCancellationRequested( );
+                int rows = 0;
+
+                using( var lease = await EnterReadAsync( cancellationToken ) )
+                {
+                    await using SqliteCommand cmd = new( batchSql, lease.Db );
+                    cmd.Parameters.AddWithValue( "@after", after );
+                    cmd.Parameters.AddWithValue( "@limit", BatchSize );
+
+                    await using SqliteDataReader r = await cmd.ExecuteReaderAsync( cancellationToken );
+                    while( await r.ReadAsync( cancellationToken ) )
+                    {
+                        rows++;
+                        after = (long)r [ "rid" ];
+                        long declared = (long)r [ "chunk_count" ];
+                        long actual   = (long)r [ "actual_count" ];
+
+                        if( actual == 0 )
+                            issues.Add( $"File '{r [ "name" ]}' (ID: {r [ "id" ]}) has no chunks." );
+                        else if( declared != actual )
+                            issues.Add( $"File '{r [ "name" ]}' (ID: {r [ "id" ]}) declares {declared} chunks but has {actual}." );
+                    }
+                }
+
+                checkedFiles += rows;
+                progress?.Report( totalFiles == 0 ? 0.9 : 0.9 * Math.Min( 1.0, (double)checkedFiles / totalFiles ) );
+                if( rows < BatchSize ) break;
+            }
+
+            // 2. Orphaned chunks with no parent file (one index scan, last 10%)
             const string orphanSql = """
                 SELECT c.file_id, COUNT(*) AS orphan_count
                 FROM   vault_chunks c
@@ -153,32 +213,19 @@ namespace DeerCryptLib.Vault
                 GROUP  BY c.file_id
                 """;
 
-            await using SqliteCommand cmd2 = new(orphanSql, _connection);
-            await using SqliteDataReader r2 = await cmd2.ExecuteReaderAsync(cancellationToken);
-            while( await r2.ReadAsync( cancellationToken ) )
+            using( var lease = await EnterReadAsync( cancellationToken ) )
             {
-                issues.Add(
-                    $"Found {r2 [ "orphan_count" ]} orphaned chunk(s) for " +
-                    $"missing file ID '{r2 [ "file_id" ]}'." );
+                await using SqliteCommand cmd = new( orphanSql, lease.Db );
+                await using SqliteDataReader r = await cmd.ExecuteReaderAsync( cancellationToken );
+                while( await r.ReadAsync( cancellationToken ) )
+                {
+                    issues.Add(
+                        $"Found {r [ "orphan_count" ]} orphaned chunk(s) for " +
+                        $"missing file ID '{r [ "file_id" ]}'." );
+                }
             }
 
-            // Check for files with no chunks at all
-            const string noChunksSql = """
-                SELECT f.id, f.name
-                FROM   vault_files f
-                WHERE  NOT EXISTS (
-                    SELECT 1 FROM vault_chunks c WHERE c.file_id = f.id
-                )
-                """;
-
-            await using SqliteCommand cmd3 = new(noChunksSql, _connection);
-            await using SqliteDataReader r3 = await cmd3.ExecuteReaderAsync(cancellationToken);
-            while( await r3.ReadAsync( cancellationToken ) )
-            {
-                issues.Add(
-                    $"File '{r3 [ "name" ]}' (ID: {r3 [ "id" ]}) has no chunks." );
-            }
-
+            progress?.Report( 1.0 );
             return issues;
         }
     }

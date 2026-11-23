@@ -1,4 +1,4 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ic="using:FluentIcons.Avalonia"
         xmlns:vm="using:DeerCrypt.ViewModels"
@@ -6,94 +6,87 @@
         xmlns:converters="using:DeerCrypt.Converters"
         x:Class="DeerCrypt.Views.Dialogs.MoveDialog"
         x:DataType="vmD:MoveDialogViewModel"
-        Background="{DynamicResource MainBackgroundBrush}"
-        Title="Move items"
-        Width="460"
-        Height="460"
+        Background="{DynamicResource AppBackgroundBrush}"
+        Title="Move to"
+        Width="480"
+        Height="520"
         CanResize="False"
         WindowStartupLocation="CenterOwner">
 
     <Grid RowDefinitions="Auto,Auto,*,Auto">
 
-        <!-- Breadcrumb -->
-        <Border Grid.Row="0"
-                BorderBrush="{DynamicResource SeparatorBrush}"
-                BorderThickness="0,0,0,1"
-                Padding="6,4">
-            <ItemsControl ItemsSource="{Binding Breadcrumb}">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <StackPanel Orientation="Horizontal" />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:BreadcrumbSegment">
-                        <StackPanel Orientation="Horizontal">
-                            <Button Content="{Binding Name}"
-                                    Command="{Binding $parent[Window].DataContext.NavigateToBreadcrumbCommand}"
-                                    CommandParameter="{Binding}"
-                                    Background="Transparent"
-                                    BorderThickness="0"
-                                    Padding="4,2" />
-                            <TextBlock Text="/"
-                                       VerticalAlignment="Center"
-                                       Margin="2,0"
-                                       Opacity="0.35" />
-                        </StackPanel>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </Border>
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Margin="24,22,24,16">
+            <Border Classes="dialog-icon">
+                <ic:SymbolIcon Symbol="FolderArrowRight" />
+            </Border>
+            <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="2" VerticalAlignment="Center">
+                <TextBlock Text="Move to" Classes="dialog-title" />
+                <TextBlock Text="{Binding Subtitle}" Classes="dialog-subtitle" />
+            </StackPanel>
+        </Grid>
 
-        <!-- Back / Up button -->
-        <Border Grid.Row="1"
-                BorderBrush="{DynamicResource SeparatorBrush}"
-                BorderThickness="0,0,0,1"
-                Padding="4,3">
-            <Button Content="← Up"
-                    Command="{Binding NavigateToParentCommand}"
-                    Padding="10,3" />
-        </Border>
-
-        <!-- Directory listing - double-click wired in code-behind -->
-        <ListBox Grid.Row="2"
-                 x:Name="DirList"
-                 ItemsSource="{Binding CurrentDirs}">
-            <ListBox.DataTemplates>
-                <DataTemplate x:DataType="vm:VaultItemViewModel">
-                    <Grid ColumnDefinitions="26,*"
-                          Margin="6,4"
-                          Opacity="{Binding IsDisabled,
-                              Converter={x:Static converters:BoolToOpacityConverter.Instance}}">
-                        <ic:SymbolIcon Grid.Column="0"
-                                       Symbol="Folder"
-                                       IconVariant="Filled"
-                                       Foreground="#E0A93B"
-                                       VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="1"
-                                   Text="{Binding DisplayName}"
-                                   VerticalAlignment="Center" />
-                    </Grid>
-                </DataTemplate>
-            </ListBox.DataTemplates>
-        </ListBox>
-
-        <!-- Footer -->
-        <Border Grid.Row="3"
-                BorderBrush="{DynamicResource SeparatorBrush}"
-                BorderThickness="0,1,0,0"
-                Padding="8,6">
-            <StackPanel Orientation="Horizontal"
-                        HorizontalAlignment="Right"
-                        Spacing="8">
-                <Button Content="Cancel"
-                        Click="OnCancelClicked" />
-                <Button Content="Move here"
-                        Command="{Binding ConfirmCommand}"
-                        Classes="accent"
-                        IsDefault="True" />
+        <!-- Location: up + breadcrumb -->
+        <Border Grid.Row="1" Classes="divider-bottom" Padding="16,0,16,8">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+                <Button Classes="ghost icon" Command="{Binding NavigateToParentCommand}" ToolTip.Tip="Up one folder">
+                    <ic:SymbolIcon Symbol="ArrowUp" />
+                </Button>
+                <ItemsControl ItemsSource="{Binding Breadcrumb}" VerticalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:BreadcrumbSegment">
+                            <StackPanel Orientation="Horizontal">
+                                <ic:SymbolIcon Symbol="ChevronRight" FontSize="12" Margin="2,0"
+                                               Foreground="{DynamicResource TextMutedBrush}"
+                                               IsVisible="{Binding !IsFirst}" />
+                                <Button Classes="ghost" Padding="6,3"
+                                        Foreground="{DynamicResource TextPrimaryBrush}"
+                                        Content="{Binding Name}"
+                                        Command="{Binding $parent[Window].((vmD:MoveDialogViewModel)DataContext).NavigateToBreadcrumbCommand}"
+                                        CommandParameter="{Binding}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
             </StackPanel>
         </Border>
 
+        <!-- Folders (double-click to open, wired in code-behind) -->
+        <Panel Grid.Row="2">
+            <ListBox x:Name="DirList" Classes="files" ItemsSource="{Binding CurrentDirs}" Margin="8,4">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:VaultItemViewModel">
+                        <Grid ColumnDefinitions="30,*,Auto" Margin="10,8"
+                              Background="Transparent"
+                              Opacity="{Binding IsDisabled, Converter={x:Static converters:BoolToOpacityConverter.Instance}}"
+                              ToolTip.Tip="Double-click to open">
+                            <ic:SymbolIcon Symbol="Folder" IconVariant="Filled" FontSize="18" Foreground="#E0A93B" />
+                            <TextBlock Grid.Column="1" Text="{Binding DisplayName}" VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis" />
+                            <ic:SymbolIcon Grid.Column="2" Symbol="ChevronRight" FontSize="12"
+                                           Foreground="{DynamicResource TextMutedBrush}" />
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <StackPanel IsVisible="{Binding !CurrentDirs.Count}" IsHitTestVisible="False"
+                        HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6">
+                <ic:SymbolIcon Symbol="FolderOpen" FontSize="32" Foreground="{DynamicResource TextMutedBrush}"
+                               HorizontalAlignment="Center" />
+                <TextBlock Text="No folders here" Classes="secondary" HorizontalAlignment="Center" />
+                <TextBlock Text="You can still move items into this folder." Classes="caption" HorizontalAlignment="Center" />
+            </StackPanel>
+        </Panel>
+
+        <Border Grid.Row="3" Classes="dialog-footer">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button Classes="secondary" Content="Cancel" IsCancel="True" Click="OnCancelClicked" />
+                <Button Classes="primary" Content="Move here" IsDefault="True" Command="{Binding ConfirmCommand}" />
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

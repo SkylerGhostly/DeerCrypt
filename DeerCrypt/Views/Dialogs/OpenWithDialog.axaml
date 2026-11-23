@@ -1,77 +1,60 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ic="using:FluentIcons.Avalonia"
         x:Class="DeerCrypt.Views.Dialogs.OpenWithDialog"
-        Background="{DynamicResource MainBackgroundBrush}"
+        Background="{DynamicResource AppBackgroundBrush}"
         Title="Open with"
-        Width="360"
+        Width="460"
         SizeToContent="Height"
         CanResize="False"
         WindowStartupLocation="CenterOwner">
 
-    <StackPanel Margin="24" Spacing="16">
-
-        <TextBlock x:Name="FileNameText"
-                   TextWrapping="Wrap"
-                   FontSize="13"
-                   FontWeight="SemiBold" />
-
-        <TextBlock Text="Choose how to open this file:"
-                   Opacity="0.6"
-                   FontSize="12" />
-
-        <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,8,Auto">
-
-            <Button Grid.Column="0" Grid.Row="0"
-                    HorizontalAlignment="Stretch"
-                    HorizontalContentAlignment="Center"
-                    Padding="0,10"
-                    Click="OnMediaPlayerClicked">
-                <StackPanel Spacing="4">
-                    <ic:SymbolIcon Symbol="MusicNote2" FontSize="22" HorizontalAlignment="Center" />
-                    <TextBlock Text="Media player" FontSize="12" HorizontalAlignment="Center" />
+    <StackPanel>
+        <StackPanel Margin="24,22,24,20" Spacing="16">
+            <Grid ColumnDefinitions="Auto,*">
+                <Border Classes="dialog-icon">
+                    <ic:SymbolIcon Symbol="Open" />
+                </Border>
+                <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="Open with" Classes="dialog-title" />
+                    <TextBlock x:Name="FileNameText" Classes="dialog-subtitle" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
-            </Button>
+            </Grid>
 
-            <Button Grid.Column="2" Grid.Row="0"
-                    HorizontalAlignment="Stretch"
-                    HorizontalContentAlignment="Center"
-                    Padding="0,10"
-                    Click="OnImageViewerClicked">
-                <StackPanel Spacing="4">
-                    <ic:SymbolIcon Symbol="Image" FontSize="22" HorizontalAlignment="Center" />
-                    <TextBlock Text="Image viewer" FontSize="12" HorizontalAlignment="Center" />
-                </StackPanel>
-            </Button>
+            <UniformGrid Columns="2" ColumnSpacing="8" RowSpacing="8">
+                <Button Classes="tile" Click="OnMediaPlayerClicked">
+                    <StackPanel Spacing="6">
+                        <ic:SymbolIcon Symbol="MusicNote2" FontSize="24" Foreground="#E0648A" HorizontalAlignment="Center" />
+                        <TextBlock Text="Media player" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                        <TextBlock Text="Plays straight from the vault" Classes="caption" HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button Classes="tile" Click="OnImageViewerClicked">
+                    <StackPanel Spacing="6">
+                        <ic:SymbolIcon Symbol="Image" FontSize="24" Foreground="#3F9BDB" HorizontalAlignment="Center" />
+                        <TextBlock Text="Image viewer" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                        <TextBlock Text="Decrypted in memory" Classes="caption" HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button Classes="tile" Click="OnTextEditorClicked">
+                    <StackPanel Spacing="6">
+                        <ic:SymbolIcon Symbol="DocumentText" FontSize="24" Foreground="#6F8FB5" HorizontalAlignment="Center" />
+                        <TextBlock Text="Text editor" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                        <TextBlock Text="Decrypted in memory" Classes="caption" HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button Classes="tile" Click="OnExternalClicked">
+                    <StackPanel Spacing="6">
+                        <ic:SymbolIcon Symbol="Open" FontSize="24" Foreground="{DynamicResource WarningBrush}" HorizontalAlignment="Center" />
+                        <TextBlock Text="Another app" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                        <TextBlock Text="Uses a temporary copy on disk" Classes="caption" HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+            </UniformGrid>
+        </StackPanel>
 
-            <Button Grid.Column="0" Grid.Row="2"
-                    HorizontalAlignment="Stretch"
-                    HorizontalContentAlignment="Center"
-                    Padding="0,10"
-                    Click="OnTextEditorClicked">
-                <StackPanel Spacing="4">
-                    <ic:SymbolIcon Symbol="DocumentText" FontSize="22" HorizontalAlignment="Center" />
-                    <TextBlock Text="Text editor" FontSize="12" HorizontalAlignment="Center" />
-                </StackPanel>
-            </Button>
-
-            <Button Grid.Column="2" Grid.Row="2"
-                    HorizontalAlignment="Stretch"
-                    HorizontalContentAlignment="Center"
-                    Padding="0,10"
-                    Click="OnExternalClicked">
-                <StackPanel Spacing="4">
-                    <ic:SymbolIcon Symbol="Open" FontSize="22" HorizontalAlignment="Center" />
-                    <TextBlock Text="Open externally" FontSize="12" HorizontalAlignment="Center" />
-                </StackPanel>
-            </Button>
-
-        </Grid>
-
-        <Button HorizontalAlignment="Right"
-                Margin="0,4,0,0"
-                Click="OnCancelClicked"
-                Content="Cancel" />
-
+        <Border Classes="dialog-footer">
+            <Button Classes="secondary" Content="Cancel" IsCancel="True" HorizontalAlignment="Right" Click="OnCancelClicked" />
+        </Border>
     </StackPanel>
 </Window>

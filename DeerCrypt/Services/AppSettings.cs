@@ -24,5 +24,8 @@
 
         /// <summary>Width of the sidebar in pixels, remembered between sessions.</summary>
         public double SidebarWidth { get; set; } = 232;
+
+        /// <summary>Whether the details panel on the right is shown.</summary>
+        public bool InspectorOpen { get; set; } = true;
     }
 }

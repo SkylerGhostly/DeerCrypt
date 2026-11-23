@@ -18,8 +18,11 @@ namespace DeerCryptLib.Vault
             if( string.IsNullOrWhiteSpace( newName ) )
                 throw new VaultOperationException( "Name cannot be empty." );
 
+            using var lease = await EnterWriteAsync( cancellationToken );
+            var db = lease.Db;
+
             const string renameFile = "UPDATE vault_files SET name = @name WHERE id = @id";
-            await using SqliteCommand fileCmd = new(renameFile, _connection);
+            await using SqliteCommand fileCmd = new(renameFile, db);
             fileCmd.Parameters.AddWithValue( "@name", newName );
             fileCmd.Parameters.AddWithValue( "@id", id );
 
@@ -27,7 +30,7 @@ namespace DeerCryptLib.Vault
                 return;
 
             const string renameDir = "UPDATE vault_directories SET name = @name WHERE id = @id";
-            await using SqliteCommand dirCmd = new(renameDir, _connection);
+            await using SqliteCommand dirCmd = new(renameDir, db);
             dirCmd.Parameters.AddWithValue( "@name", newName );
             dirCmd.Parameters.AddWithValue( "@id", id );
 
@@ -48,14 +51,17 @@ namespace DeerCryptLib.Vault
             if( id == RootDirId )
                 throw new VaultOperationException( "The root directory cannot be moved." );
 
-            if( !await DirectoryExistsAsync( targetDirectoryId, cancellationToken ) )
+            using var lease = await EnterWriteAsync( cancellationToken );
+            var db = lease.Db;
+
+            if( !await DirectoryExistsAsync( db, targetDirectoryId, cancellationToken ) )
                 throw new VaultItemNotFoundException( targetDirectoryId, "target directory" );
 
-            if( await IsDescendantOrSelfAsync( id, targetDirectoryId, cancellationToken ) )
+            if( await IsDescendantOrSelfAsync( db, id, targetDirectoryId, cancellationToken ) )
                 throw new VaultOperationException( "Cannot move a directory into itself or one of its subdirectories." );
 
             const string moveFile = "UPDATE vault_files SET directory_id = @targetId WHERE id = @id";
-            await using SqliteCommand fileCmd = new(moveFile, _connection);
+            await using SqliteCommand fileCmd = new(moveFile, db);
             fileCmd.Parameters.AddWithValue( "@targetId", targetDirectoryId );
             fileCmd.Parameters.AddWithValue( "@id", id );
 
@@ -63,7 +69,7 @@ namespace DeerCryptLib.Vault
                 return;
 
             const string moveDir = "UPDATE vault_directories SET parent_id = @targetId WHERE id = @id";
-            await using SqliteCommand dirCmd = new(moveDir, _connection);
+            await using SqliteCommand dirCmd = new(moveDir, db);
             dirCmd.Parameters.AddWithValue( "@targetId", targetDirectoryId );
             dirCmd.Parameters.AddWithValue( "@id", id );
 
@@ -82,6 +88,9 @@ namespace DeerCryptLib.Vault
         {
             bool hasSearch = !string.IsNullOrWhiteSpace(searchTerm);
 
+            using var lease = await EnterReadAsync( cancellationToken );
+            var db = lease.Db;
+
             string sql = hasSearch
                 ? """
                   SELECT id, name, directory_id, original_size, chunk_count, added_at
@@ -95,7 +104,7 @@ namespace DeerCryptLib.Vault
                   ORDER  BY name COLLATE NOCASE
                   """;
 
-            await using SqliteCommand cmd = new(sql, _connection);
+            await using SqliteCommand cmd = new(sql, db);
 
             if( hasSearch )
             {
@@ -123,6 +132,9 @@ namespace DeerCryptLib.Vault
             string id,
             CancellationToken cancellationToken = default )
         {
+            using var lease = await EnterReadAsync( cancellationToken );
+            var db = lease.Db;
+
             // Check files first
             const string fileSql = """
                 SELECT id, name, directory_id, original_size, chunk_count, added_at
@@ -130,7 +142,7 @@ namespace DeerCryptLib.Vault
                 WHERE  id = @id
                 """;
 
-            await using SqliteCommand fileCmd = new(fileSql, _connection);
+            await using SqliteCommand fileCmd = new(fileSql, db);
             fileCmd.Parameters.AddWithValue( "@id", id );
 
             await using SqliteDataReader fileReader = await fileCmd.ExecuteReaderAsync(cancellationToken);
@@ -144,7 +156,7 @@ namespace DeerCryptLib.Vault
                 WHERE  id = @id
                 """;
 
-            await using SqliteCommand dirCmd = new(dirSql, _connection);
+            await using SqliteCommand dirCmd = new(dirSql, db);
             dirCmd.Parameters.AddWithValue( "@id", id );
 
             await using SqliteDataReader dirReader = await dirCmd.ExecuteReaderAsync(cancellationToken);

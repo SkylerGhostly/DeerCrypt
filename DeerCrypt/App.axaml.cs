@@ -48,7 +48,20 @@ namespace DeerCrypt
                     DataContext = new MainViewModel( VaultService, RecentVaultsService )
                 };
 
-                desktop.Exit += async ( _, _ ) => await VaultService.DisposeAsync( );
+                desktop.Exit += ( _, e ) =>
+                {
+                    // The window's closing flow normally locks the vault first; this is the
+                    // backstop for any other exit path. Run off the UI thread with a timeout
+                    // so a stuck background step can't hang shutdown.
+                    try { Task.Run( ( ) => VaultService.DisposeAsync( ).AsTask( ) ).Wait( TimeSpan.FromSeconds( 15 ) ); }
+                    catch { }
+
+                    // End the process here, before Avalonia tears down its D-Bus connection.
+                    // On Linux that teardown reports through the already-stopped UI dispatcher
+                    // and crashes with an unhandled TaskCanceledException (happens even in a
+                    // blank Avalonia 11.3 app). Nothing after this point matters to DeerCrypt.
+                    Environment.Exit( e.ApplicationExitCode );
+                };
             }
 
             base.OnFrameworkInitializationCompleted( );

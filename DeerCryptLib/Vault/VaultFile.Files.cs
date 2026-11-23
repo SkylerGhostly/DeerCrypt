@@ -16,7 +16,9 @@ namespace DeerCryptLib.Vault
             string fileId,
             CancellationToken cancellationToken = default )
         {
-            return await ReadFileSha256Async( fileId, cancellationToken );
+            using var lease = await EnterReadAsync( cancellationToken );
+            var db = lease.Db;
+            return await ReadFileSha256Async( db, fileId, cancellationToken );
         }
 
         /// <summary>
@@ -39,9 +41,6 @@ namespace DeerCryptLib.Vault
             if( !File.Exists( sourcePath ) )
                 throw new VaultItemNotFoundException( sourcePath, "source file on disk" );
 
-            if( !await DirectoryExistsAsync( directoryId, cancellationToken ) )
-                throw new VaultItemNotFoundException( directoryId, "target directory" );
-
             string fileId   = Guid.NewGuid().ToString();
             string fileName = Path.GetFileName(sourcePath);
 
@@ -52,11 +51,19 @@ namespace DeerCryptLib.Vault
             int  chunkCount = (int)Math.Ceiling((double)fileSize / chunkSize);
             if( chunkCount == 0 ) chunkCount = 1; // empty file still produces one chunk
 
+            // Hash before taking the gate: for very large files this is the slow part,
+            // and it doesn't touch the vault.
             byte[] sha256 = await ComputeSha256Async(fileStream, cancellationToken);
             fileStream.Seek( 0, SeekOrigin.Begin );
 
+            using var lease = await EnterWriteAsync( cancellationToken );
+            var db = lease.Db;
+
+            if( !await DirectoryExistsAsync( db, directoryId, cancellationToken ) )
+                throw new VaultItemNotFoundException( directoryId, "target directory" );
+
             await using SqliteTransaction transaction =
-                await _connection.BeginTransactionAsync(cancellationToken) as SqliteTransaction
+                await db.BeginTransactionAsync(cancellationToken) as SqliteTransaction
                 ?? throw new InvalidOperationException("Failed to begin SQLite transaction.");
 
             try
@@ -128,10 +135,6 @@ namespace DeerCryptLib.Vault
             if( !File.Exists( sourcePath ) )
                 throw new VaultItemNotFoundException( fileId, "source file on disk" );
 
-            // Verify the file exists in the vault
-            VaultEntry? _ = await ReadVaultEntryAsync(fileId, cancellationToken)
-                ?? throw new VaultItemNotFoundException(fileId, "file");
-
             await using FileStream fileStream = new(
                 sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
 
@@ -143,8 +146,15 @@ namespace DeerCryptLib.Vault
             byte[] sha256 = await ComputeSha256Async(fileStream, cancellationToken);
             fileStream.Seek( 0, SeekOrigin.Begin );
 
+            using var lease = await EnterWriteAsync( cancellationToken );
+            var db = lease.Db;
+
+            // Verify the file exists in the vault
+            VaultEntry? _ = await ReadVaultEntryAsync( db, fileId, cancellationToken)
+                ?? throw new VaultItemNotFoundException(fileId, "file");
+
             await using SqliteTransaction transaction =
-            await _connection.BeginTransactionAsync(cancellationToken) as SqliteTransaction
+            await db.BeginTransactionAsync(cancellationToken) as SqliteTransaction
                 ?? throw new InvalidOperationException("Failed to begin transaction.");
 
             try
@@ -152,7 +162,7 @@ namespace DeerCryptLib.Vault
                 // 1. Delete existing chunks 
                 await using SqliteCommand deleteChunks = new(
                     "DELETE FROM vault_chunks WHERE file_id = @id",
-                    _connection, transaction);
+                    db, transaction);
                 deleteChunks.Parameters.AddWithValue( "@id", fileId );
                 await deleteChunks.ExecuteNonQueryAsync( cancellationToken );
 
@@ -202,7 +212,7 @@ namespace DeerCryptLib.Vault
                     WHERE  id = @id
                     """;
 
-                await using SqliteCommand updateFile = new(updateSql, _connection, transaction);
+                await using SqliteCommand updateFile = new(updateSql, db, transaction);
                 updateFile.Parameters.AddWithValue( "@size", fileSize );
                 updateFile.Parameters.AddWithValue( "@chunkSize", chunkSize );
                 updateFile.Parameters.AddWithValue( "@chunkCount", chunkCount );
@@ -234,10 +244,6 @@ namespace DeerCryptLib.Vault
             IProgress<double>? progress = null,
             CancellationToken cancellationToken = default )
         {
-            // Verify the file exists in the vault
-            VaultEntry? _ = await ReadVaultEntryAsync( fileId, cancellationToken )
-                ?? throw new VaultItemNotFoundException( fileId, "file" );
-
             // Ensure we have a seekable stream
             Stream stream;
             bool   ownsStream;
@@ -265,8 +271,15 @@ namespace DeerCryptLib.Vault
                 byte[] sha256 = await ComputeSha256Async( stream, cancellationToken );
                 stream.Seek( 0, SeekOrigin.Begin );
 
+                using var lease = await EnterWriteAsync( cancellationToken );
+                var db = lease.Db;
+
+                // Verify the file exists in the vault
+                VaultEntry? _ = await ReadVaultEntryAsync( db, fileId, cancellationToken )
+                    ?? throw new VaultItemNotFoundException( fileId, "file" );
+
                 await using SqliteTransaction transaction =
-                    await _connection.BeginTransactionAsync( cancellationToken ) as SqliteTransaction
+                    await db.BeginTransactionAsync( cancellationToken ) as SqliteTransaction
                     ?? throw new InvalidOperationException( "Failed to begin transaction." );
 
                 try
@@ -274,7 +287,7 @@ namespace DeerCryptLib.Vault
                     // 1. Delete existing chunks 
                     await using SqliteCommand deleteChunks = new(
                         "DELETE FROM vault_chunks WHERE file_id = @id",
-                        _connection, transaction );
+                        db, transaction );
                     deleteChunks.Parameters.AddWithValue( "@id", fileId );
                     await deleteChunks.ExecuteNonQueryAsync( cancellationToken );
 
@@ -324,7 +337,7 @@ namespace DeerCryptLib.Vault
                         WHERE  id = @id
                         """;
 
-                    await using SqliteCommand updateFile = new( updateSql, _connection, transaction );
+                    await using SqliteCommand updateFile = new( updateSql, db, transaction );
                     updateFile.Parameters.AddWithValue( "@size", fileSize );
                     updateFile.Parameters.AddWithValue( "@chunkSize", chunkSize );
                     updateFile.Parameters.AddWithValue( "@chunkCount", chunkCount );
@@ -361,8 +374,13 @@ namespace DeerCryptLib.Vault
             IProgress<double>? progress = null,
             CancellationToken cancellationToken = default )
         {
-            VaultEntry record = await ReadVaultEntryAsync( fileId, cancellationToken )
-        ?? throw new VaultItemNotFoundException( fileId, "file" );
+            VaultEntry record;
+            using( var lease = await EnterReadAsync( cancellationToken ) )
+            {
+                var db = lease.Db;
+                record = await ReadVaultEntryAsync( db, fileId, cancellationToken )
+                    ?? throw new VaultItemNotFoundException( fileId, "file" );
+            }
 
             string? outputDir = Path.GetDirectoryName( outputPath );
             if( !string.IsNullOrEmpty( outputDir ) )
@@ -379,10 +397,9 @@ namespace DeerCryptLib.Vault
             {
                 for( int chunkIndex = 0; chunkIndex < record.ChunkCount; chunkIndex++ )
                 {
-                    byte[] encryptedChunk = await ReadVaultChunkAsync( fileId, chunkIndex, cancellationToken )
-                ?? throw new VaultCorruptException( $"Chunk {chunkIndex} of file '{fileId}' is missing from the vault." );
-
-                    await DecryptChunkToStreamAsync( encryptedChunk, outputStream, cancellationToken );
+                    // Read + decrypt one chunk under the gate, write it to disk outside it
+                    byte[] plaintext = await FetchDecryptedChunkAsync( fileId, chunkIndex, cancellationToken );
+                    await outputStream.WriteAsync( plaintext, cancellationToken );
 
                     progress?.Report( (double)( chunkIndex + 1 ) / record.ChunkCount );
                 }
@@ -392,7 +409,9 @@ namespace DeerCryptLib.Vault
                 // Verify assembled file hash - catches any tampering even if per-chunk HMACs passed
                 outputStream.Seek( 0, SeekOrigin.Begin );
                 byte[] actualSha256 = await ComputeSha256Async( outputStream, cancellationToken );
-                byte[] storedSha256 = await ReadFileSha256Async( fileId, cancellationToken );
+                byte[] storedSha256;
+                using( var lease = await EnterReadAsync( cancellationToken ) )
+                    storedSha256 = await ReadFileSha256Async( lease.Db, fileId, cancellationToken );
                 integrityPassed = CryptographicOperations.FixedTimeEquals( actualSha256, storedSha256 );
             }
             finally
@@ -424,11 +443,15 @@ namespace DeerCryptLib.Vault
             IProgress<double>? progress = null,
             CancellationToken cancellationToken = default )
         {
-            int chunkCount = await GetChunkCountAsync(fileId, cancellationToken);
+            using var lease = await EnterWriteAsync( cancellationToken );
+            var db = lease.Db;
+
+            int chunkCount = await GetChunkCountAsync( db, fileId, cancellationToken);
             if( chunkCount == 0 )
                 throw new VaultItemNotFoundException( fileId, "file" );
 
             await DeleteChunksInBatchesAsync(
+                db,
                 [ fileId ],
                 new Dictionary<string, int> { [ fileId ] = chunkCount },
                 chunkCount,
@@ -437,7 +460,7 @@ namespace DeerCryptLib.Vault
                 {
                     await using SqliteCommand cmd = new(
                         "DELETE FROM vault_files WHERE id = @id",
-                        _connection, transaction);
+                        db, transaction);
                     cmd.Parameters.AddWithValue( "@id", fileId );
                     await cmd.ExecuteNonQueryAsync( ct );
                 },
@@ -461,8 +484,9 @@ namespace DeerCryptLib.Vault
             string fileId,
             CancellationToken cancellationToken = default )
         {
-            (long originalSize, int chunkSize, int chunkCount) =
-                await ReadStreamMetaAsync( fileId, cancellationToken );
+            long originalSize; int chunkSize; int chunkCount;
+            using( var lease = await EnterReadAsync( cancellationToken ) )
+                (originalSize, chunkSize, chunkCount) = await ReadStreamMetaAsync( lease.Db, fileId, cancellationToken );
 
             return new VaultReadStream(
                 fileId: fileId,

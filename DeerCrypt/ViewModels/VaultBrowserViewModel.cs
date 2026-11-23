@@ -115,8 +115,6 @@ namespace DeerCrypt.ViewModels
         {
             if( ct.IsCancellationRequested ) return;
 
-            CurrentItems.Clear( );
-
             if( string.IsNullOrWhiteSpace( query ) )
             {
                 await ReloadCurrentViewAsync( ct );
@@ -124,27 +122,42 @@ namespace DeerCrypt.ViewModels
             }
 
             StatusMessage = "Searching…";
-
-            var results = await Vault.ListRecursiveAsync( query, ct );
-            if( ct.IsCancellationRequested ) return;
-
-            var pathMap = BuildDirPathMap( );
-
-            CurrentItems.Clear( );
-
-            foreach( var entry in results )
+            int version = BeginLoad( );
+            try
             {
-                var vm = new VaultItemViewModel( entry );
-                if( pathMap.TryGetValue( entry.DirectoryId, out string? path ) )
-                    vm.SubText = path;
-                WireItemNotifications( vm );
-                CurrentItems.Add( vm );
-            }
+                var results = await Vault.ListRecursiveAsync( query, ct );
+                if( ct.IsCancellationRequested || !IsCurrentLoad( version ) ) return;
 
-            int count = results.Count;
-            StatusMessage = count == 0
-                ? $"No results for \"{query}\""
-                : $"{count} result{( count == 1 ? "" : "s" )} for \"{query}\"";
+                var pathMap = BuildDirPathMap( );
+                var items   = new List<VaultItemViewModel>( results.Count );
+
+                foreach( var entry in results )
+                {
+                    var vm = new VaultItemViewModel( entry );
+                    if( pathMap.TryGetValue( entry.DirectoryId, out string? path ) )
+                        vm.SubText = path;
+                    if( _checkedOutFiles.ContainsKey( entry.Id ) )
+                        vm.IsCheckedOut = true;
+                    WireItemNotifications( vm );
+                    items.Add( vm );
+                }
+
+                ReplaceItems( items );
+
+                int count = results.Count;
+                StatusMessage = count == 0
+                    ? $"No results for \"{query}\""
+                    : $"{count} result{( count == 1 ? "" : "s" )} for \"{query}\"";
+            }
+            catch( OperationCanceledException ) { }
+            catch( Exception ex )
+            {
+                if( IsCurrentLoad( version ) ) StatusMessage = $"Search failed: {ex.Message}";
+            }
+            finally
+            {
+                EndLoad( version );
+            }
         }
 
         private Dictionary<string, string> BuildDirPathMap( )
@@ -256,83 +269,37 @@ namespace DeerCrypt.ViewModels
             List<string> folderPaths,
             string targetDirectoryId )
         {
-            if( OwnerWindow == null ) return;
-
             int totalItems = filePaths.Count + folderPaths.Count;
             if( totalItems == 0 ) return;
 
-            var progressVm = new ProgressDialogViewModel
-            {
-                Title     = $"Adding {totalItems} item{( totalItems == 1 ? "" : "s" )}...",
-                CanCancel = true
-            };
+            string noun = $"{totalItems} item{( totalItems == 1 ? "" : "s" )}";
+            var activity = new ActivityItem( $"Adding {noun}", FluentIcons.Common.Symbol.ArrowUpload );
 
-            var progressDialog = new ProgressDialog { DataContext = progressVm };
+            await Activities.RunAsync( activity,
+                a => AddDroppedItemsAsync( filePaths, folderPaths, targetDirectoryId, a, a.CancellationToken ),
+                _ => $"Added {noun}" );
 
-            var addTask = AddDroppedItemsAsync(
-                filePaths,
-                folderPaths,
-                targetDirectoryId,
-                progressVm,
-                progressVm.CancellationToken);
-
-            var dialogTask = progressDialog.ShowDialog(OwnerWindow);
-
-            await addTask;
-
-            progressVm.Complete( );
-            progressVm.CurrentFileName = progressVm.IsCancelled
-                ? "Cancelled."
-                : $"Added {totalItems} item{( totalItems == 1 ? "" : "s" )}.";
-
-            await Task.Delay( 600 );
-            progressDialog.Close( );
-            await dialogTask;
-
-            await ReloadTreeAsync( );
-            await RefreshVaultInfoAsync( );
+            await AfterVaultChangedAsync( );
         }
 
         private async Task AddDroppedItemsAsync(
             List<string> filePaths,
             List<string> folderPaths,
             string targetDirectoryId,
-            ProgressDialogViewModel progressVm,
+            ActivityItem activity,
             CancellationToken cancellationToken )
         {
-            try
+            if( filePaths.Count > 0 )
+                await AddFilePathsAsync( filePaths, targetDirectoryId, activity, cancellationToken );
+
+            foreach( string folderPath in folderPaths )
             {
-                if( filePaths.Count > 0 )
-                {
-                    await AddFilePathsAsync(
-                        filePaths,
-                        targetDirectoryId,
-                        progressVm,
-                        cancellationToken );
-                }
+                if( cancellationToken.IsCancellationRequested ) break;
 
-                foreach( string folderPath in folderPaths )
-                {
-                    if( cancellationToken.IsCancellationRequested ) break;
+                activity.CurrentFileName = Path.GetFileName(
+                    folderPath.TrimEnd( Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar ) );
 
-                    string name = Path.GetFileName(
-                        folderPath.TrimEnd(
-                            Path.DirectorySeparatorChar,
-                            Path.AltDirectorySeparatorChar));
-
-                    progressVm.CurrentFileName = name;
-
-                    await AddFolderPathAsync(
-                        folderPath,
-                        targetDirectoryId,
-                        progressVm,
-                        cancellationToken );
-                }
-            }
-            catch( Exception ex )
-            {
-                progressVm.CurrentFileName = $"Error: {ex.Message}";
-                progressVm.IsComplete = true;
+                await AddFolderPathAsync( folderPath, targetDirectoryId, activity, cancellationToken );
             }
         }
 
@@ -412,11 +379,11 @@ namespace DeerCrypt.ViewModels
             string directoryId,
             CancellationToken cancellationToken = default )
         {
-            CurrentItems.Clear( );
-
+            int version = BeginLoad( );
             try
             {
                 VaultListing listing = await Vault.ListAsync(directoryId, cancellationToken);
+                if( !IsCurrentLoad( version ) ) return; // the user has moved on
 
                 // No ".." row: the breadcrumb, Up button, and Backspace cover going up.
                 var allItems = new List<VaultItemViewModel>();
@@ -439,14 +406,17 @@ namespace DeerCrypt.ViewModels
                     allItems.Add( vm );
                 }
 
-                foreach( var item in GetSortedItems( allItems ) )
-                    CurrentItems.Add( item );
-
+                ReplaceItems( GetSortedItems( allItems ) );
                 StatusMessage = string.Empty; // item count is shown on the right of the status bar
             }
+            catch( OperationCanceledException ) { }
             catch( Exception ex )
             {
-                StatusMessage = $"Error loading items: {ex.Message}";
+                if( IsCurrentLoad( version ) ) StatusMessage = $"Couldn't load this folder: {ex.Message}";
+            }
+            finally
+            {
+                EndLoad( version );
             }
         }
 
@@ -603,72 +573,45 @@ namespace DeerCrypt.ViewModels
         {
             if( OwnerWindow == null ) return;
 
-            StatusMessage = "Checking vault integrity...";
-            IsBusy = true;
-
-            try
+            IReadOnlyList<string> issues = [ ];
+            var activity = new ActivityItem( "Checking vault integrity", FluentIcons.Common.Symbol.ShieldCheckmark )
             {
-                var progressVm = new ProgressDialogViewModel
+                CurrentFileName = "Checking every file's chunks",
+                StatusText      = "Runs on its own connection, so you can keep browsing"
+            };
+
+            await Activities.RunAsync( activity,
+                async a => issues = await Task.Run( ( ) => Vault.CheckIntegrityAsync(
+                    new ThrottledProgress( p => a.Progress = p ), a.CancellationToken ), a.CancellationToken ),
+                _ => issues.Count == 0 ? "No problems found" : $"{issues.Count} problem{( issues.Count == 1 ? "" : "s" )} found" );
+
+            if( activity.State != ActivityState.Completed || OwnerWindow == null ) return;
+
+            var vm = issues.Count == 0
+                ? new ConfirmDialogViewModel
                 {
-                    Title     = "Checking vault integrity...",
-                    CurrentFileName = "Checking vault integrity...",
-                    StatusText = "On large vaults this may take some time.",
-                    CanCancel = false,
-                    IsIndeterminate = true,
+                    Title       = "Integrity check",
+                    Message     = "Your vault is healthy",
+                    Detail      = "Every file has the chunks it expects, and nothing is orphaned.",
+                    ConfirmText = "Done",
+                    CancelText  = "",
+                    Tone        = DialogTone.Success
+                }
+                : new ConfirmDialogViewModel
+                {
+                    Title       = "Integrity check",
+                    Message     = $"{issues.Count} problem{( issues.Count == 1 ? "" : "s" )} found",
+                    Detail      = string.Join( "\n", issues.Select( i => $"• {i}" ) ),
+                    ConfirmText = "Close",
+                    CancelText  = "",
+                    Tone        = DialogTone.Warning
                 };
 
-                var progressDialog = new ProgressDialog { DataContext = progressVm };
-                progressDialog.Show( OwnerWindow );
-
-                IReadOnlyList<string> issues = await Task.Run(
-                    ( ) => Vault.CheckIntegrityAsync( cancellationToken ),
-                    cancellationToken );
-
-                progressVm.IsComplete = true;
-                progressDialog.Close( );
-
-                if( issues.Count == 0 )
-                {
-                    var vm = new ConfirmDialogViewModel
-                    {
-                        Title       = "Integrity Check",
-                        Message     = "Vault integrity check passed.",
-                        Detail      = "No issues found.",
-                        ConfirmText = "OK",
-                        CancelText  = ""
-                    };
-
-                    await new ConfirmDialog { DataContext = vm }
-                        .ShowDialog( OwnerWindow );
-
-                    StatusMessage = "Integrity check passed.";
-                }
-                else
-                {
-                    string issueList = string.Join("\n", issues.Select(i => $"• {i}"));
-
-                    var vm = new ConfirmDialogViewModel
-                    {
-                        Title       = "Integrity Check - Issues Found",
-                        Message     = $"{issues.Count} issue{( issues.Count == 1 ? "" : "s" )} found:",
-                        Detail      = issueList,
-                        ConfirmText = "OK",
-                        CancelText  = ""
-                    };
-
-                    await new ConfirmDialog { DataContext = vm }
-                        .ShowDialog( OwnerWindow );
-
-                    StatusMessage = $"Integrity check found {issues.Count} issue(s).";
-                }
-            }
-            finally
-            {
-                IsBusy = false;
-            }
+            await new ConfirmDialog { DataContext = vm }.ShowDialog( OwnerWindow );
+            await AfterVaultChangedAsync( );
         }
 
-        [RelayCommand( CanExecute = nameof( IsFolderView ) )]
+        [RelayCommand( CanExecute = nameof( IsFolderView ), AllowConcurrentExecutions = true )]
         private async Task AddFilesAsync( CancellationToken cancellationToken )
         {
             if( _currentDirectory == null || OwnerWindow == null ) return;
@@ -676,45 +619,26 @@ namespace DeerCrypt.ViewModels
             var files = await OwnerWindow.StorageProvider.OpenFilePickerAsync(
                 new FilePickerOpenOptions
                 {
-                    Title         = "Add Files to Vault",
+                    Title         = "Add files to the vault",
                     AllowMultiple = true
                 });
 
             if( files.Count == 0 ) return;
 
             List<string> paths = [ .. files.Select(f => f.Path.LocalPath) ];
+            string targetId    = _currentDirectory.DirectoryId;
+            string noun        = $"{paths.Count} file{( paths.Count == 1 ? "" : "s" )}";
 
-            var progressVm = new ProgressDialogViewModel
-            {
-                Title     = $"Adding {paths.Count} file{( paths.Count == 1 ? "" : "s" )}...",
-                CanCancel = true
-            };
+            var activity = new ActivityItem( $"Adding {noun}", FluentIcons.Common.Symbol.ArrowUpload );
+            await Activities.RunAsync( activity,
+                a => AddFilePathsAsync( paths, targetId, a, a.CancellationToken ),
+                _ => $"Added {noun}" );
 
-            var progressDialog = new ProgressDialog { DataContext = progressVm };
-
-            var addTask = AddFilePathsAsync(
-                paths,
-                _currentDirectory.DirectoryId,
-                progressVm,
-                progressVm.CancellationToken);
-
-            var dialogTask = progressDialog.ShowDialog(OwnerWindow);
-
-            await addTask;
-
-            progressVm.Complete( );
-            progressVm.CurrentFileName = progressVm.IsCancelled
-                ? "Cancelled."
-                : $"Added {paths.Count} file{( paths.Count == 1 ? "" : "s" )}.";
-            await Task.Delay( 600, cancellationToken );
-            progressDialog.Close( );
-            await dialogTask;
-
-            await ReloadCurrentViewAsync( cancellationToken );
-            await RefreshVaultInfoAsync( cancellationToken );
+            await ReloadCurrentViewAsync( );
+            await RefreshVaultInfoAsync( );
         }
 
-        [RelayCommand( CanExecute = nameof( IsFolderView ) )]
+        [RelayCommand( CanExecute = nameof( IsFolderView ), AllowConcurrentExecutions = true )]
         private async Task AddFolderAsync( CancellationToken cancellationToken )
         {
             if( _currentDirectory == null || OwnerWindow == null ) return;
@@ -722,7 +646,7 @@ namespace DeerCrypt.ViewModels
             var folders = await OwnerWindow.StorageProvider.OpenFolderPickerAsync(
                 new FolderPickerOpenOptions
                 {
-                    Title         = "Select Folder to Add",
+                    Title         = "Choose a folder to add",
                     AllowMultiple = false
                 });
 
@@ -738,7 +662,7 @@ namespace DeerCrypt.ViewModels
             }
             catch( Exception ex )
             {
-                StatusMessage = $"Error scanning folder: {ex.Message}";
+                StatusMessage = $"Couldn't read that folder: {ex.Message}";
                 return;
             }
 
@@ -748,34 +672,13 @@ namespace DeerCrypt.ViewModels
 
             if( confirmed != true ) return;
 
-            var progressVm = new ProgressDialogViewModel
-            {
-                Title     = $"Adding \"{manifest.RootName}\"...",
-                CanCancel = true
-            };
+            string targetId = _currentDirectory.DirectoryId;
+            var activity = new ActivityItem( $"Adding \"{manifest.RootName}\"", FluentIcons.Common.Symbol.FolderArrowUp );
+            await Activities.RunAsync( activity,
+                a => AddFolderToVaultAsync( manifest, targetId, a, a.CancellationToken ),
+                _ => $"Added \"{manifest.RootName}\"" );
 
-            var progressDialog = new ProgressDialog { DataContext = progressVm };
-
-            var addTask = AddFolderToVaultAsync(
-                manifest,
-                _currentDirectory.DirectoryId,
-                progressVm,
-                progressVm.CancellationToken);
-
-            var dialogTask = progressDialog.ShowDialog(OwnerWindow);
-
-            await addTask;
-
-            progressVm.Complete( );
-            progressVm.CurrentFileName = progressVm.IsCancelled
-                ? "Cancelled."
-                : $"Added \"{manifest.RootName}\" successfully.";
-            await Task.Delay( 600, cancellationToken );
-            progressDialog.Close( );
-            await dialogTask;
-
-            await ReloadTreeAsync( cancellationToken );
-            await RefreshVaultInfoAsync( cancellationToken );
+            await AfterVaultChangedAsync( );
         }
 
         // Shared core add methods 
@@ -783,7 +686,7 @@ namespace DeerCrypt.ViewModels
         private async Task AddFilePathsAsync(
             IEnumerable<string> filePaths,
             string targetDirectoryId,
-            ProgressDialogViewModel progressVm,
+            ActivityItem progressVm,
             CancellationToken cancellationToken )
         {
             List<string> paths     = [ .. filePaths ];
@@ -831,13 +734,10 @@ namespace DeerCrypt.ViewModels
                 {
                     break;
                 }
+                catch( ObjectDisposedException ) { throw; }
                 catch( Exception ex )
                 {
-                    string msg = ex.Message;
-                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync( ( ) =>
-                        progressVm.StatusText = $"Failed: {name} - {msg}" );
-
-                    await Task.Delay( 1500, CancellationToken.None );
+                    progressVm.AddFailure( name, ex.Message );
                 }
             }
         }
@@ -845,7 +745,7 @@ namespace DeerCrypt.ViewModels
         private async Task AddFolderPathAsync(
             string folderPath,
             string targetDirectoryId,
-            ProgressDialogViewModel progressVm,
+            ActivityItem progressVm,
             CancellationToken cancellationToken )
         {
             string trimmed = folderPath
@@ -863,7 +763,7 @@ namespace DeerCrypt.ViewModels
         private async Task AddFolderToVaultAsync(
             FolderManifest manifest,
             string parentDirectoryId,
-            ProgressDialogViewModel progressVm,
+            ActivityItem progressVm,
             CancellationToken cancellationToken )
         {
             Dictionary<string, string> dirIdMap = new()
@@ -961,14 +861,23 @@ namespace DeerCrypt.ViewModels
             DirectoryNodeViewModel? restored = FindNode(RootNodes, currentId)
                 ?? rootNode;
 
-            if( ActiveSmartView != null )
+            if( ActiveSmartView != null || IsSearchActive )
             {
-                // Stay in the library view; just re-point the folder state at the new tree
+                // Stay in the library view or search; just re-point the folder state at the new tree
                 _currentDirectory = restored;
                 SelectedDirectory = restored;
                 UpdateBreadcrumb( restored );
                 SyncSidebarState( );
-                await ReloadCurrentViewAsync( cancellationToken );
+                if( IsSearchActive )
+                {
+                    _searchCts?.Cancel( );
+                    _searchCts = new CancellationTokenSource( );
+                    await RunSearchAsync( SearchText, _searchCts.Token );
+                }
+                else
+                {
+                    await ReloadCurrentViewAsync( cancellationToken );
+                }
                 return;
             }
 
@@ -977,7 +886,7 @@ namespace DeerCrypt.ViewModels
 
         // Extract 
 
-        [RelayCommand( CanExecute = nameof( CanExtract ) )]
+        [RelayCommand( CanExecute = nameof( CanExtract ), AllowConcurrentExecutions = true )]
         private async Task ExtractAsync( CancellationToken cancellationToken )
         {
             if( OwnerWindow == null ) return;
@@ -988,104 +897,73 @@ namespace DeerCrypt.ViewModels
             var folders = await OwnerWindow.StorageProvider.OpenFolderPickerAsync(
                 new FolderPickerOpenOptions
                 {
-                    Title         = "Extract To...",
+                    Title         = "Extract to",
                     AllowMultiple = false
                 });
 
             if( folders.Count == 0 ) return;
 
             string outputPath = folders[0].Path.LocalPath;
-
             string title = items.Count == 1
-                ? $"Extracting \"{items[0].DisplayName}\"..."
-                : $"Extracting {items.Count} items...";
+                ? $"Extracting \"{items[0].DisplayName}\""
+                : $"Extracting {items.Count} items";
 
-            var progressVm = new ProgressDialogViewModel
+            var activity = new ActivityItem( title, FluentIcons.Common.Symbol.ArrowDownload );
+            await Activities.RunAsync( activity,
+                a => Task.Run( ( ) => ExtractItemsAsync( items, outputPath, a ) ),
+                _ => items.Count == 1 ? $"Extracted \"{items[0].DisplayName}\"" : $"Extracted {items.Count} items" );
+
+            if( activity.State == ActivityState.Completed )
+                StatusMessage = $"Extracted to {outputPath}";
+        }
+
+        /// <summary>Runs on a worker thread; UI updates are posted back to the dispatcher.</summary>
+        private async Task ExtractItemsAsync( List<VaultItemViewModel> items, string outputPath, ActivityItem activity )
+        {
+            int total     = items.Count;
+            int completed = 0;
+            CancellationToken ct = activity.CancellationToken;
+
+            foreach( var item in items )
             {
-                Title     = title,
-                CanCancel = true
-            };
+                if( ct.IsCancellationRequested ) break;
 
-            var progressDialog = new ProgressDialog { DataContext = progressVm };
+                int snap = completed;
+                Avalonia.Threading.Dispatcher.UIThread.Post( ( ) =>
+                {
+                    activity.CurrentFileName = item.DisplayName;
+                    activity.StatusText      = total > 1 ? $"{snap + 1} of {total}" : string.Empty;
+                } );
 
-            var extractTask = Task.Run( async ( ) =>
-            {
-                int total     = items.Count;
-                int completed = 0;
+                IProgress<double> progress = new ThrottledProgress( p => activity.Progress = ( snap + p ) / total );
 
                 try
                 {
-                    foreach( var item in items )
-                    {
-                        if( progressVm.CancellationToken.IsCancellationRequested ) break;
-
-                        Avalonia.Threading.Dispatcher.UIThread.Post( ( ) =>
-                        {
-                            progressVm.CurrentFileName = item.DisplayName;
-                            progressVm.StatusText      = $"{completed + 1} of {total}";
-                        } );
-
-                        IProgress<double> progress = new Progress<double>( p =>
-                        {
-                            Avalonia.Threading.Dispatcher.UIThread.Post( ( ) =>
-                                progressVm.Progress = ( completed + p ) / total );
-                        } );
-
-                        if( item.AsFile is VaultEntry file )
-                        {
-                            string dest = Path.Combine(outputPath, file.Name);
-                            await Vault.ExtractAsync( file.Id, dest, progress,
-                                progressVm.CancellationToken );
-                        }
-                        else if( item.AsDir is VaultDirectoryEntry dir )
-                        {
-                            await Vault.ExtractDirectoryAsync( dir.Id, outputPath, progress,
-                                progressVm.CancellationToken );
-                        }
-
-                        completed++;
-                        Avalonia.Threading.Dispatcher.UIThread.Post( ( ) =>
-                            progressVm.Progress = (double)completed / total );
-                    }
-
-                    Avalonia.Threading.Dispatcher.UIThread.Post( ( ) =>
-                    {
-                        progressVm.Complete( );
-                        progressVm.CurrentFileName = progressVm.IsCancelled
-                            ? "Cancelled."
-                            : "Extraction complete.";
-                    } );
+                    if( item.AsFile is VaultEntry file )
+                        await Vault.ExtractAsync( file.Id, Path.Combine( outputPath, file.Name ), progress, ct );
+                    else if( item.AsDir is VaultDirectoryEntry dir )
+                        await Vault.ExtractDirectoryAsync( dir.Id, outputPath, progress, ct );
                 }
-                catch( OperationCanceledException )
-                {
-                    Avalonia.Threading.Dispatcher.UIThread.Post( ( ) =>
-                    {
-                        progressVm.CurrentFileName = "Cancelled.";
-                        progressVm.IsComplete      = true;
-                    } );
-                }
+                catch( OperationCanceledException ) { break; }
+                catch( ObjectDisposedException ) { throw; }
                 catch( Exception ex )
                 {
-                    Avalonia.Threading.Dispatcher.UIThread.Post( ( ) =>
-                    {
-                        progressVm.CurrentFileName = $"Error: {ex.Message}";
-                        progressVm.IsComplete      = true;
-                    } );
+                    string msg = ex.Message;
+                    Avalonia.Threading.Dispatcher.UIThread.Post( ( ) => activity.AddFailure( item.DisplayName, msg ) );
                 }
 
-                await Task.Delay( 600, CancellationToken.None );
-                Avalonia.Threading.Dispatcher.UIThread.Post( ( ) => progressDialog.Close( ) );
-            }, cancellationToken );
+                completed++;
+                int done = completed;
+                Avalonia.Threading.Dispatcher.UIThread.Post( ( ) => activity.Progress = (double)done / total );
+            }
 
-            await progressDialog.ShowDialog( OwnerWindow );
-            await extractTask;
-
-            StatusMessage = "Extraction complete.";
+            // Let the posted failure/progress updates land before the activity is finalized
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync( ( ) => { } );
         }
 
         // Delete 
 
-        [RelayCommand( CanExecute = nameof( CanDelete ) )]
+        [RelayCommand( CanExecute = nameof( CanDelete ), AllowConcurrentExecutions = true )]
         private async Task DeleteAsync( CancellationToken cancellationToken )
         {
             if( OwnerWindow == null ) return;
@@ -1093,31 +971,26 @@ namespace DeerCrypt.ViewModels
             var items = SelectedItems.Where(i => !i.IsParentDir && !i.IsCheckedOut).ToList();
             if( items.Count == 0 ) return;
 
-            // Build confirmation message
-            string message;
-            string detail;
+            string message = items.Count == 1
+                ? $"Delete \"{items [ 0 ].DisplayName}\"?"
+                : $"Delete {items.Count} items?";
 
-            if( items.Count == 1 )
-            {
-                message = $"Are you sure you want to delete \"{items [ 0 ].DisplayName}\"?";
-                detail  = items [ 0 ].IsDir
-                    ? "This will permanently delete the folder and all of its contents."
-                    : string.Empty;
-            }
-            else
-            {
-                message = $"Are you sure you want to delete {items.Count} items?";
-                detail = "This cannot be undone.";
-                detail  = string.Join( "\n", items.Select( i => $"• {i.DisplayName}" ) );
-            }
+            string detail = items.Count == 1
+                ? items [ 0 ].IsDir
+                    ? "The folder and everything in it will be permanently deleted. This can't be undone."
+                    : "The file will be permanently deleted. This can't be undone."
+                : "These will be permanently deleted. This can't be undone.\n\n" +
+                  string.Join( "\n", items.Take( 8 ).Select( i => $"• {i.DisplayName}" ) ) +
+                  ( items.Count > 8 ? $"\n• and {items.Count - 8} more" : string.Empty );
 
             var confirmVm = new ConfirmDialogViewModel
             {
-                Title       = "Confirm Delete",
+                Title       = "Delete",
                 Message     = message,
                 Detail      = detail,
                 ConfirmText = "Delete",
-                CancelText  = "Cancel"
+                CancelText  = "Cancel",
+                Tone        = DialogTone.Danger
             };
 
             bool? confirmed = await new ConfirmDialog { DataContext = confirmVm }
@@ -1125,81 +998,65 @@ namespace DeerCrypt.ViewModels
 
             if( confirmed != true ) return;
 
-            var progressVm = new ProgressDialogViewModel
-            {
-                Title     = items.Count == 1
-                    ? $"Deleting \"{items[0].DisplayName}\"..."
-                    : $"Deleting {items.Count} items...",
-                CanCancel = false
-            };
+            string title = items.Count == 1 ? $"Deleting \"{items[0].DisplayName}\"" : $"Deleting {items.Count} items";
+            var activity = new ActivityItem( title, FluentIcons.Common.Symbol.Delete );
 
-            var progressDialog = new ProgressDialog { DataContext = progressVm };
+            await Activities.RunAsync( activity,
+                a => Task.Run( ( ) => DeleteItemsAsync( items, a ) ),
+                _ => items.Count == 1 ? $"Deleted \"{items[0].DisplayName}\"" : $"Deleted {items.Count} items" );
 
-            var deleteTask = Task.Run( async ( ) =>
+            await RefreshVaultInfoAsync( );
+        }
+
+        /// <summary>Runs on a worker thread. Each item is its own transaction; cancelling stops between items.</summary>
+        private async Task DeleteItemsAsync( List<VaultItemViewModel> items, ActivityItem activity )
+        {
+            int total     = items.Count;
+            int completed = 0;
+            CancellationToken ct = activity.CancellationToken;
+
+            foreach( var item in items )
             {
-                int total     = items.Count;
-                int completed = 0;
+                if( ct.IsCancellationRequested ) break;
+
+                int snap = completed;
+                Avalonia.Threading.Dispatcher.UIThread.Post( ( ) =>
+                {
+                    activity.CurrentFileName = item.DisplayName;
+                    activity.StatusText      = total > 1 ? $"{snap + 1} of {total}" : string.Empty;
+                } );
+
+                IProgress<double> progress = new ThrottledProgress( p => activity.Progress = ( snap + p ) / total );
 
                 try
                 {
-                    foreach( var item in items )
-                    {
-                        Avalonia.Threading.Dispatcher.UIThread.Post( ( ) =>
-                        {
-                            progressVm.CurrentFileName = item.DisplayName;
-                            progressVm.StatusText      = $"{completed + 1} of {total}";
-                        } );
+                    // Not cancellable mid-item: each item is one transaction
+                    if( item.AsFile is VaultEntry file )
+                        await Vault.RemoveAsync( file.Id, progress, CancellationToken.None );
+                    else if( item.AsDir is VaultDirectoryEntry dir )
+                        await Vault.RemoveDirectoryAsync( dir.Id, progress, CancellationToken.None );
 
-                        IProgress<double> progress = new Progress<double>( p =>
-                        {
-                            Avalonia.Threading.Dispatcher.UIThread.Post( ( ) =>
-                                progressVm.Progress = ( completed + p ) / total );
-                        } );
-
-                        if( item.AsFile is VaultEntry file )
-                        {
-                            await Vault.RemoveAsync( file.Id, progress, CancellationToken.None );
-                        }
-                        else if( item.AsDir is VaultDirectoryEntry dir )
-                        {
-                            await Vault.RemoveDirectoryAsync( dir.Id, progress, CancellationToken.None );
-                        }
-
-                        completed++;
-
-                        Avalonia.Threading.Dispatcher.UIThread.Post( ( ) =>
-                        {
-                            CurrentItems.Remove( item );
-                            if( item.AsDir is VaultDirectoryEntry dirEntry )
-                                RemoveNodeFromTree( RootNodes, dirEntry.Id );
-                            progressVm.Progress = (double)completed / total;
-                        } );
-                    }
-
+                    completed++;
+                    int done = completed;
                     Avalonia.Threading.Dispatcher.UIThread.Post( ( ) =>
                     {
-                        SelectedFile = null;
-                        SelectedItems.Clear( );
-                        progressVm.Complete( );
+                        CurrentItems.Remove( item );
+                        SelectedItems.Remove( item );
+                        if( ReferenceEquals( SelectedFile, item ) ) SelectedFile = null;
+                        if( item.AsDir is VaultDirectoryEntry dirEntry )
+                            RemoveNodeFromTree( RootNodes, dirEntry.Id );
+                        activity.Progress = (double)done / total;
                     } );
                 }
+                catch( ObjectDisposedException ) { throw; }
                 catch( Exception ex )
                 {
-                    Avalonia.Threading.Dispatcher.UIThread.Post( ( ) =>
-                    {
-                        progressVm.StatusText = $"Error: {ex.Message}";
-                        progressVm.IsComplete = true;
-                    } );
+                    string msg = ex.Message;
+                    Avalonia.Threading.Dispatcher.UIThread.Post( ( ) => activity.AddFailure( item.DisplayName, msg ) );
                 }
+            }
 
-                await Task.Delay( 400, CancellationToken.None );
-                Avalonia.Threading.Dispatcher.UIThread.Post( ( ) => progressDialog.Close( ) );
-            }, cancellationToken );
-
-            await progressDialog.ShowDialog( OwnerWindow );
-            await deleteTask;
-
-            await RefreshVaultInfoAsync( cancellationToken );
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync( ( ) => { } );
         }
 
         private static bool RemoveNodeFromTree(
@@ -1294,10 +1151,11 @@ namespace DeerCrypt.ViewModels
 
             var vm = new InputDialogViewModel
             {
-                Title       = "New Folder",
-                Prompt      = "Enter a name for the new folder:",
+                Title       = "New folder",
+                Prompt      = "It's created inside the folder you're viewing.",
                 Placeholder = "Folder name",
                 ConfirmText = "Create",
+                Icon        = FluentIcons.Common.Symbol.FolderAdd,
                 Validator   = ValidateItemName
             };
 
@@ -1380,18 +1238,20 @@ namespace DeerCrypt.ViewModels
         {
             if( OwnerWindow == null ) return;
 
-            long reclaimable = await Vault.GetReclaimableBytesAsync(cancellationToken);
+            long reclaimable = await Vault.GetReclaimableBytesAsync( cancellationToken );
 
-            var vm     = new CompactDialogViewModel(Vault, reclaimable);
-            var dialog = new CompactDialog { DataContext = vm };
+            var vm = new CompactDialogViewModel( reclaimable );
+            bool? result = await new CompactDialog { DataContext = vm }.ShowDialog<bool?>( OwnerWindow );
+            if( result != true ) return;
 
-            bool? result = await dialog.ShowDialog<bool?>( OwnerWindow );
+            var activity = new ActivityItem( "Compacting vault", FluentIcons.Common.Symbol.Broom );
+            await Activities.RunAsync( activity,
+                a => Task.Run( ( ) => Vault.CompactAsync(
+                    progress: new ThrottledProgress( p => a.Progress = p ),
+                    cancellationToken: a.CancellationToken ) ),
+                _ => $"Reclaimed about {Converters.FileSizeConverter.Format( reclaimable )}" );
 
-            if( result == true )
-            {
-                await RefreshVaultInfoAsync( cancellationToken );
-                StatusMessage = "Vault compacted.";
-            }
+            await RefreshVaultInfoAsync( );
         }
 
         // Navigation 
@@ -1579,46 +1439,18 @@ namespace DeerCrypt.ViewModels
 
             Directory.CreateDirectory( tempDir );
 
-            var progressVm = new ProgressDialogViewModel
+            var activity = new ActivityItem( $"Opening \"{item.DisplayName}\"", FluentIcons.Common.Symbol.Open )
             {
-                Title           = $"Opening \"{item.DisplayName}\"",
                 CurrentFileName = item.DisplayName,
-                StatusText      = "Decrypting…",
-                CanCancel       = true
+                StatusText      = "Decrypting to a temporary copy"
             };
 
-            var progressDialog = new ProgressDialog { DataContext = progressVm };
+            string fileToOpen = item.AsFile.Id;
+            await Activities.RunAsync( activity,
+                a => ExtractToTempAsync( fileToOpen, tempPath, a, a.CancellationToken ),
+                _ => $"Opened \"{item.DisplayName}\"" );
 
-            var extractTask = ExtractToTempAsync(
-                item.AsFile.Id,
-                tempPath,
-                progressVm,
-                progressVm.CancellationToken );
-
-            var dialogTask = progressDialog.ShowDialog( OwnerWindow );
-
-            bool success = false;
-            try
-            {
-                await extractTask;
-                success = true;
-            }
-            catch( OperationCanceledException )
-            {
-                // User cancelled - swallow silently
-            }
-            catch( Exception ex )
-            {
-                progressVm.StatusText      = string.Empty;
-                progressVm.CurrentFileName = $"Error: {ex.Message}";
-                progressVm.Progress        = 0;
-                await Task.Delay( 1500, cancellationToken );
-            }
-
-            // Allow OnClosing to permit programmatic Close() regardless of outcome
-            progressVm.IsComplete = true;
-            progressDialog.Close( );
-            await dialogTask;
+            bool success = activity.State == ActivityState.Completed;
 
             if( !success )
             {
@@ -1763,7 +1595,7 @@ namespace DeerCrypt.ViewModels
         private async Task ExtractToTempAsync(
             string fileId,
             string tempPath,
-            ProgressDialogViewModel progressVm,
+            ActivityItem progressVm,
             CancellationToken cancellationToken )
         {
             IProgress<double> progress = new Progress<double>( p => progressVm.Progress = p );
@@ -1955,10 +1787,15 @@ namespace DeerCrypt.ViewModels
             {
                 try
                 {
-                    await Vault.UpdateAsync(
-                        checkedOut.FileId,
-                        checkedOut.TempPath,
-                        cancellationToken: CancellationToken.None );
+                    var activity = new ActivityItem( $"Saving \"{item.DisplayName}\"", FluentIcons.Common.Symbol.Save, canCancel: false )
+                    {
+                        IsIndeterminate = true
+                    };
+                    await Activities.RunAsync( activity,
+                        _ => Vault.UpdateAsync( checkedOut.FileId, checkedOut.TempPath, cancellationToken: CancellationToken.None ),
+                        _ => $"Saved \"{item.DisplayName}\" to the vault" );
+                    if( activity.State != ActivityState.Completed )
+                        throw new InvalidOperationException( activity.ResultText );
 
                     await ReloadCurrentViewAsync( );
 

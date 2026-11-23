@@ -37,6 +37,10 @@
             <SolidColorBrush x:Key="DangerBrush"             Color="#F06A6A" />
             <SolidColorBrush x:Key="SuccessBrush"            Color="#5CC98A" />
             <SolidColorBrush x:Key="WarningBrush"            Color="#E8B44C" />
+            <SolidColorBrush x:Key="DangerSoftBrush"         Color="#F06A6A" Opacity="0.16" />
+            <SolidColorBrush x:Key="SuccessSoftBrush"        Color="#5CC98A" Opacity="0.16" />
+            <SolidColorBrush x:Key="WarningSoftBrush"        Color="#E8B44C" Opacity="0.16" />
+            <SolidColorBrush x:Key="DangerHoverBrush"        Color="#F48585" />
 
             <!-- Legacy keys still referenced by dialogs -->
             <SolidColorBrush x:Key="MainBackgroundBrush"     Color="#1B1B1E" />
@@ -65,6 +69,10 @@
             <SolidColorBrush x:Key="DangerBrush"             Color="#C93C3C" />
             <SolidColorBrush x:Key="SuccessBrush"            Color="#2E8B57" />
             <SolidColorBrush x:Key="WarningBrush"            Color="#B07A12" />
+            <SolidColorBrush x:Key="DangerSoftBrush"         Color="#C93C3C" Opacity="0.12" />
+            <SolidColorBrush x:Key="SuccessSoftBrush"        Color="#2E8B57" Opacity="0.12" />
+            <SolidColorBrush x:Key="WarningSoftBrush"        Color="#B07A12" Opacity="0.14" />
+            <SolidColorBrush x:Key="DangerHoverBrush"        Color="#B23030" />
 
             <SolidColorBrush x:Key="MainBackgroundBrush"     Color="#FBFBFC" />
             <SolidColorBrush x:Key="SeparatorBrush"          Color="#E2E2E7" />

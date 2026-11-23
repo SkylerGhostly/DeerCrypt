@@ -1,10 +1,9 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using DeerCrypt.ViewModels.Dialogs;
-using System;
 
 namespace DeerCrypt.Views.Dialogs
 {
+    /// <summary>Asks before compacting. Returns true to start; the work itself runs as a background activity.</summary>
     public partial class CompactDialog : Window
     {
         public CompactDialog( )
@@ -12,32 +11,7 @@ namespace DeerCrypt.Views.Dialogs
             InitializeComponent( );
         }
 
-        private void OnCancelClicked( object? sender, RoutedEventArgs e )
-        {
-            Close( false );
-        }
-
-        protected override void OnClosing( WindowClosingEventArgs e )
-        {
-            if( DataContext is CompactDialogViewModel { IsCompacting: true } )
-                e.Cancel = true;
-
-            base.OnClosing( e );
-        }
-
-        protected override void OnDataContextChanged( EventArgs e )
-        {
-            base.OnDataContextChanged( e );
-
-            if( DataContext is CompactDialogViewModel vm )
-            {
-                vm.PropertyChanged += ( _, args ) =>
-                {
-                    if( args.PropertyName == nameof( CompactDialogViewModel.IsComplete )
-                        && vm.IsComplete )
-                        Close( true );
-                };
-            }
-        }
+        private void OnConfirmClicked( object? sender, RoutedEventArgs e ) => Close( true );
+        private void OnCancelClicked( object? sender, RoutedEventArgs e ) => Close( false );
     }
 }

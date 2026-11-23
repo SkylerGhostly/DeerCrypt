@@ -14,6 +14,14 @@ namespace DeerCrypt.Views.Dialogs
             InitializeComponent( );
         }
 
+        protected override void OnOpened( EventArgs e )
+        {
+            base.OnOpened( e );
+            // Path already known (recent vault or dropped file): go straight to the password
+            if( DataContext is OpenVaultViewModel { VaultPath.Length: > 0 } )
+                this.FindControl<TextBox>( "PasswordBox" )?.Focus( );
+        }
+
         private void OnCancelClicked( object? sender, RoutedEventArgs e )
         {
             Close( );
@@ -36,7 +44,7 @@ namespace DeerCrypt.Views.Dialogs
                 {
                     var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
                     {
-                        Title         = "Open Vault",
+                        Title         = "Choose a vault file",
                         AllowMultiple = false,
                         FileTypeFilter =
                         [

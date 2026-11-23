@@ -1,40 +1,47 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ic="using:FluentIcons.Avalonia"
         xmlns:vm="using:DeerCrypt.ViewModels.Dialogs"
         x:Class="DeerCrypt.Views.Dialogs.ConfirmDialog"
         x:DataType="vm:ConfirmDialogViewModel"
-        Background="{DynamicResource MainBackgroundBrush}"
+        Background="{DynamicResource AppBackgroundBrush}"
         Title="{Binding Title}"
-        Width="380"
+        Width="440"
         SizeToContent="Height"
         CanResize="False"
         WindowStartupLocation="CenterOwner">
 
-    <StackPanel Margin="24" Spacing="14">
+    <StackPanel>
+        <Grid ColumnDefinitions="Auto,*" Margin="24,22,24,20">
+            <Border Classes="dialog-icon"
+                    Classes.danger="{Binding IsDanger}"
+                    Classes.warning="{Binding IsWarning}"
+                    Classes.success="{Binding IsSuccess}">
+                <ic:SymbolIcon Symbol="{Binding Icon}" />
+            </Border>
+            <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="6">
+                <TextBlock Text="{Binding Message}" Classes="dialog-title" Margin="0,8,0,0" />
+                <ScrollViewer MaxHeight="280" IsVisible="{Binding HasDetail}">
+                    <SelectableTextBlock Text="{Binding Detail}"
+                                         TextWrapping="Wrap"
+                                         FontSize="13"
+                                         Foreground="{DynamicResource TextSecondaryBrush}" />
+                </ScrollViewer>
+            </StackPanel>
+        </Grid>
 
-        <TextBlock Text="{Binding Message}"
-                   TextWrapping="Wrap"
-                   FontSize="14" />
-
-        <TextBlock Text="{Binding Detail}"
-                   TextWrapping="Wrap"
-                   Opacity="0.6"
-                   FontSize="12"
-                   IsVisible="{Binding Detail,
-                       Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-
-        <StackPanel Orientation="Horizontal"
-                    HorizontalAlignment="Right"
-                    Spacing="8"
-                    Margin="0,6,0,0">
-            <Button Content="{Binding CancelText}"
-                    Click="OnCancelClicked"
-                    IsVisible="{Binding CancelText,
-                    Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-            <Button Content="{Binding ConfirmText}"
-                    Classes="accent"
-                    Click="OnConfirmClicked" />
-        </StackPanel>
-
+        <Border Classes="dialog-footer">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button Classes="secondary" Content="{Binding CancelText}"
+                        IsVisible="{Binding HasCancel}" IsCancel="True"
+                        Click="OnCancelClicked" />
+                <Button Classes="primary" Content="{Binding ConfirmText}"
+                        IsVisible="{Binding !IsDanger}" IsDefault="True"
+                        Click="OnConfirmClicked" />
+                <Button Classes="danger" Content="{Binding ConfirmText}"
+                        IsVisible="{Binding IsDanger}"
+                        Click="OnConfirmClicked" />
+            </StackPanel>
+        </Border>
     </StackPanel>
 </Window>

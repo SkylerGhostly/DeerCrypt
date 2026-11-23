@@ -28,6 +28,7 @@
         <KeyBinding Gesture="Ctrl+O"       Command="{Binding VaultBrowser.AddFilesCommand}" />
         <KeyBinding Gesture="Ctrl+D1"      Command="{Binding VaultBrowser.SetViewModeCommand}" CommandParameter="List" />
         <KeyBinding Gesture="Ctrl+D2"      Command="{Binding VaultBrowser.SetViewModeCommand}" CommandParameter="Grid" />
+        <KeyBinding Gesture="Ctrl+I"       Command="{Binding VaultBrowser.ToggleInspectorCommand}" />
     </Window.KeyBindings>
 
     <Window.Styles>
@@ -157,9 +158,34 @@
             </Setter>
         </Style>
 
+        <!-- Previous results stay visible but dimmed while a slow load is in flight -->
+        <Style Selector="ListBox#FileList.loading">
+            <Setter Property="Opacity" Value="0.55" />
+        </Style>
+
         <!-- Keep folder tree expansion in sync with the view model -->
         <Style Selector="TreeView#FolderTree TreeViewItem" x:DataType="vm:DirectoryNodeViewModel">
             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+        </Style>
+
+        <!-- Toggle-style ghost buttons (details panel) -->
+        <Style Selector="Button.ghost.selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SelectedBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        </Style>
+
+        <!-- Activity state icon colors -->
+        <Style Selector="ic|SymbolIcon.activity-state">
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+        </Style>
+        <Style Selector="ic|SymbolIcon.activity-state.running">
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+        </Style>
+        <Style Selector="ic|SymbolIcon.activity-state.ok">
+            <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
+        </Style>
+        <Style Selector="ic|SymbolIcon.activity-state.bad">
+            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
         </Style>
 
         <!-- Segmented list/grid switch -->
@@ -388,10 +414,10 @@
                                         <MenuItem.Icon><ic:SymbolIcon Symbol="ShieldCheckmark" /></MenuItem.Icon>
                                     </MenuItem>
                                     <Separator />
-                                    <MenuItem Header="Open another vault…" Command="{Binding OpenVaultCommand}">
+                                    <MenuItem Header="Lock and open another vault…" Command="{Binding OpenVaultCommand}">
                                         <MenuItem.Icon><ic:SymbolIcon Symbol="FolderOpen" /></MenuItem.Icon>
                                     </MenuItem>
-                                    <MenuItem Header="Create vault…" Command="{Binding NewVaultCommand}">
+                                    <MenuItem Header="Lock and create a vault…" Command="{Binding NewVaultCommand}">
                                         <MenuItem.Icon><ic:SymbolIcon Symbol="Add" /></MenuItem.Icon>
                                     </MenuItem>
                                 </MenuFlyout>
@@ -518,10 +544,11 @@
                               ResizeDirection="Columns" />
 
                 <!-- Content -->
-                <Grid Grid.Column="2" RowDefinitions="Auto,Auto,*,Auto">
+                <Grid Grid.Column="2" RowDefinitions="Auto,Auto,*,Auto" ColumnDefinitions="*,Auto">
 
                     <!-- Toolbar: navigation, location, actions -->
                     <Border Grid.Row="0"
+                            Grid.ColumnSpan="2"
                             x:Name="NavBar"
                             Classes="divider-bottom"
                             Padding="10,8"
@@ -638,6 +665,13 @@
                                         </MenuFlyout>
                                     </Button.Flyout>
                                 </Button>
+
+                                <Button Classes="ghost icon" Margin="4,0,0,0"
+                                        Classes.selected="{Binding IsInspectorOpen}"
+                                        Command="{Binding ToggleInspectorCommand}"
+                                        ToolTip.Tip="Details panel (Ctrl+I)">
+                                    <ic:SymbolIcon Symbol="PanelRight" />
+                                </Button>
                             </StackPanel>
                         </Grid>
                     </Border>
@@ -671,6 +705,7 @@
                         <ListBox x:Name="FileList"
                                  Classes="files"
                                  Classes.grid="{Binding IsGridView}"
+                                 Classes.loading="{Binding ShowLoadingBar}"
                                  ItemsSource="{Binding CurrentItems}"
                                  SelectedItem="{Binding SelectedFile}"
                                  SelectionMode="Multiple">
@@ -702,6 +737,14 @@
                             </ListBox.ContextMenu>
                         </ListBox>
 
+                        <!-- Loading: thin bar across the top; the previous list stays (dimmed) until results arrive -->
+                        <ProgressBar IsVisible="{Binding ShowLoadingBar}"
+                                     IsIndeterminate="True"
+                                     Classes="meter"
+                                     Height="2" MinHeight="2"
+                                     CornerRadius="0"
+                                     VerticalAlignment="Top" />
+
                         <!-- Empty state (doesn't block drops onto the list behind it) -->
                         <StackPanel IsVisible="{Binding IsCurrentViewEmpty}"
                                     IsHitTestVisible="False"
@@ -719,14 +762,243 @@
                         </StackPanel>
                     </Panel>
 
-                    <!-- Status bar -->
-                    <Border Grid.Row="3" Classes="divider-top" Padding="14,0" Height="28"
+
+                    <!-- ═══ Inspector ═══ -->
+                    <Border Grid.Row="1" Grid.RowSpan="2" Grid.Column="1"
+                            Width="300"
+                            IsVisible="{Binding IsInspectorOpen}"
+                            BorderBrush="{DynamicResource HairlineBrush}"
+                            BorderThickness="1,0,0,0">
+                        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel Margin="18,18,18,24" Spacing="16">
+
+                                <!-- Preview area (thumbnails arrive in a later phase; icon for now) -->
+                                <Border Height="150"
+                                        CornerRadius="{StaticResource RadiusLarge}"
+                                        Background="{DynamicResource SurfaceSunkenBrush}">
+                                    <ic:SymbolIcon Symbol="{Binding InspectorIcon}"
+                                                   IconVariant="Filled"
+                                                   FontSize="56"
+                                                   Foreground="{Binding InspectorIconBrush}" />
+                                </Border>
+
+                                <StackPanel Spacing="3">
+                                    <SelectableTextBlock Text="{Binding InspectorTitle}"
+                                                         FontSize="16" FontWeight="SemiBold"
+                                                         TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding InspectorSubtitle}" Classes="secondary"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+
+                                <!-- Actions -->
+                                <WrapPanel IsVisible="{Binding HasInspectorActions}" ItemSpacing="6" LineSpacing="6">
+                                    <Button Classes="primary" Command="{Binding OpenCommand}"
+                                            IsVisible="{Binding !IsInspectingMultiple}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <ic:SymbolIcon Symbol="Open" />
+                                            <TextBlock Text="Open" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Classes="secondary" Command="{Binding ExtractCommand}"
+                                            IsVisible="{Binding IsInspectingMultiple}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <ic:SymbolIcon Symbol="ArrowDownload" />
+                                            <TextBlock Text="Extract" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Classes="secondary icon" Command="{Binding ExtractCommand}" ToolTip.Tip="Extract to disk"
+                                            IsVisible="{Binding !IsInspectingMultiple}">
+                                        <ic:SymbolIcon Symbol="ArrowDownload" />
+                                    </Button>
+                                    <Button Classes="secondary icon" Command="{Binding MoveCommand}" ToolTip.Tip="Move to folder">
+                                        <ic:SymbolIcon Symbol="FolderArrowRight" />
+                                    </Button>
+                                    <Button Classes="secondary icon" Command="{Binding RenameCommand}" ToolTip.Tip="Rename (F2)"
+                                            IsVisible="{Binding !IsInspectingMultiple}">
+                                        <ic:SymbolIcon Symbol="Rename" />
+                                    </Button>
+                                    <Button Classes="secondary icon" Command="{Binding DeleteCommand}" ToolTip.Tip="Delete">
+                                        <ic:SymbolIcon Symbol="Delete" Foreground="{DynamicResource DangerBrush}" />
+                                    </Button>
+                                </WrapPanel>
+
+                                <Rectangle Height="1" Fill="{DynamicResource HairlineBrush}" />
+
+                                <!-- Details -->
+                                <ItemsControl ItemsSource="{Binding InspectorRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:InspectorRow">
+                                            <Grid ColumnDefinitions="24,*" Margin="0,0,0,12">
+                                                <Panel VerticalAlignment="Top" Margin="0,1,0,0">
+                                                    <ic:SymbolIcon Symbol="{Binding Icon}" FontSize="15"
+                                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                                   IsVisible="{Binding !HasIconBrush}" />
+                                                    <ic:SymbolIcon Symbol="{Binding Icon}" FontSize="15"
+                                                                   Foreground="{Binding IconBrush}"
+                                                                   IsVisible="{Binding HasIconBrush}" />
+                                                </Panel>
+                                                <StackPanel Grid.Column="1" Spacing="1">
+                                                    <TextBlock Text="{Binding Label}" Classes="caption" />
+                                                    <SelectableTextBlock Text="{Binding Value}" FontSize="13" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <!-- Integrity hash -->
+                                <Border Classes="stat" IsVisible="{Binding HasInspectorHash}">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="SHA-256 of the original file" Classes="caption" />
+                                            <TextBlock Text="{Binding InspectorHashShort}"
+                                                       FontFamily="monospace" FontSize="12.5"
+                                                       ToolTip.Tip="{Binding InspectorHash}" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Classes="ghost icon" VerticalAlignment="Center"
+                                                Command="{Binding CopyInspectorHashCommand}" ToolTip.Tip="Copy the full hash">
+                                            <ic:SymbolIcon Symbol="Copy" />
+                                        </Button>
+                                    </Grid>
+                                </Border>
+
+                                <Button Classes="ghost" HorizontalAlignment="Left" Padding="0,2"
+                                        IsVisible="{Binding CanRevealInspected}"
+                                        Command="{Binding RevealInspectedCommand}"
+                                        Foreground="{DynamicResource AccentBrush}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <ic:SymbolIcon Symbol="FolderOpen" />
+                                        <TextBlock Text="Show in folder" />
+                                    </StackPanel>
+                                </Button>
+
+                                <TextBlock IsVisible="{Binding IsInspectingSummary}"
+                                           Text="Select a file or folder to see its details."
+                                           Classes="caption" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+
+                    <!-- ═══ Status bar with activity ═══ -->
+                    <Border Grid.Row="3" Grid.ColumnSpan="2" Classes="divider-top" Padding="10,0,14,0" Height="34"
                             Background="{DynamicResource ChromeBackgroundBrush}">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Grid.Column="0" Text="{Binding StatusMessage}"
+                        <Grid ColumnDefinitions="*,Auto,Auto">
+
+                            <!-- Plain status message when nothing is running -->
+                            <TextBlock Grid.Column="0" Text="{Binding StatusMessage}" Margin="4,0,0,0"
+                                       IsVisible="{Binding !Activities.ShowStrip}"
                                        Classes="secondary" FontSize="12" VerticalAlignment="Center"
                                        TextTrimming="CharacterEllipsis" />
-                            <TextBlock Grid.Column="1" Text="{Binding SelectionText}"
+
+                            <!-- Featured activity: running, or the one that just finished -->
+                            <Panel Grid.Column="0" IsVisible="{Binding Activities.ShowStrip}">
+                            <Grid DataContext="{Binding Activities.Current}"
+                                  x:DataType="vm:ActivityItem"
+                                  ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto"
+                                  VerticalAlignment="Center">
+                                <ic:SymbolIcon Grid.Column="0" Symbol="{Binding StateIcon}" Margin="4,0,8,0"
+                                               Classes="activity-state"
+                                               Classes.running="{Binding IsRunning}"
+                                               Classes.ok="{Binding IsSucceeded}"
+                                               Classes.bad="{Binding IsFailedState}" />
+                                <TextBlock Grid.Column="1" Text="{Binding Title}" FontSize="12" FontWeight="SemiBold"
+                                           VerticalAlignment="Center" MaxWidth="280" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Column="2" FontSize="12" Classes="secondary" Margin="10,0"
+                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                           Text="{Binding CurrentFileName}" IsVisible="{Binding IsRunning}" />
+                                <TextBlock Grid.Column="2" FontSize="12" Classes="secondary" Margin="10,0"
+                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                           Text="{Binding ResultText}" IsVisible="{Binding IsFinished}" />
+                                <ProgressBar Grid.Column="3" Classes="meter" Width="140" Minimum="0" Maximum="1"
+                                             Value="{Binding Progress}" IsIndeterminate="{Binding IsIndeterminate}"
+                                             IsVisible="{Binding IsRunning}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="4" Text="{Binding PercentText}" FontSize="12" Classes="secondary"
+                                           Margin="8,0,0,0" MinWidth="32" VerticalAlignment="Center"
+                                           IsVisible="{Binding IsRunning}" />
+                                <Button Grid.Column="5" Classes="ghost" Padding="4" Margin="4,0,0,0"
+                                        Command="{Binding CancelCommand}" IsVisible="{Binding IsRunning}"
+                                        ToolTip.Tip="Cancel">
+                                    <ic:SymbolIcon Symbol="Dismiss" FontSize="12" />
+                                </Button>
+                            </Grid>
+                            </Panel>
+
+                            <!-- All activity -->
+                            <Button Grid.Column="1" Classes="ghost" Padding="8,4" Margin="8,0"
+                                    IsVisible="{Binding Activities.HasItems}"
+                                    ToolTip.Tip="Activity">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <ic:SymbolIcon Symbol="History" FontSize="14" />
+                                    <TextBlock Text="Activity" FontSize="12" />
+                                    <Border IsVisible="{Binding Activities.HasBadge}"
+                                            Background="{DynamicResource AccentBrush}" CornerRadius="8" Padding="5,0">
+                                        <TextBlock Text="{Binding Activities.BadgeText}" FontSize="11" Foreground="White" />
+                                    </Border>
+                                </StackPanel>
+                                <Button.Flyout>
+                                    <Flyout Placement="TopEdgeAlignedRight">
+                                        <Grid RowDefinitions="Auto,*" Width="380" MaxHeight="420"
+                                              DataContext="{Binding Activities}" x:DataType="vm:ActivityCenter">
+                                            <Grid ColumnDefinitions="*,Auto" Margin="16,12,10,8">
+                                                <TextBlock Text="Activity" Classes="title" VerticalAlignment="Center" />
+                                                <Button Grid.Column="1" Classes="ghost" Padding="8,4"
+                                                        Command="{Binding ClearFinishedCommand}">
+                                                    <TextBlock Text="Clear finished" FontSize="12" />
+                                                </Button>
+                                            </Grid>
+                                            <ScrollViewer Grid.Row="1">
+                                                <ItemsControl ItemsSource="{Binding Items}" Margin="8,0,8,10">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:ActivityItem">
+                                                            <Border CornerRadius="{StaticResource RadiusMedium}" Padding="10,9" Margin="0,2"
+                                                                    Background="{DynamicResource SurfaceSunkenBrush}">
+                                                                <Grid ColumnDefinitions="Auto,*,Auto">
+                                                                    <ic:SymbolIcon Symbol="{Binding StateIcon}" FontSize="18"
+                                                                                   VerticalAlignment="Top" Margin="0,1,10,0"
+                                                                                   Classes="activity-state"
+                                                                                   Classes.running="{Binding IsRunning}"
+                                                                                   Classes.ok="{Binding IsSucceeded}"
+                                                                                   Classes.bad="{Binding IsFailedState}" />
+                                                                    <StackPanel Grid.Column="1" Spacing="4">
+                                                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="12.5"
+                                                                                   TextTrimming="CharacterEllipsis" />
+                                                                        <StackPanel Spacing="4" IsVisible="{Binding IsRunning}">
+                                                                            <TextBlock Text="{Binding CurrentFileName}" Classes="caption"
+                                                                                       TextTrimming="CharacterEllipsis" />
+                                                                            <Grid ColumnDefinitions="*,Auto">
+                                                                                <ProgressBar Classes="meter" Minimum="0" Maximum="1"
+                                                                                             Value="{Binding Progress}"
+                                                                                             IsIndeterminate="{Binding IsIndeterminate}"
+                                                                                             VerticalAlignment="Center" />
+                                                                                <TextBlock Grid.Column="1" Text="{Binding PercentText}"
+                                                                                           Classes="caption" Margin="8,0,0,0" />
+                                                                            </Grid>
+                                                                            <TextBlock Text="{Binding StatusText}" Classes="caption"
+                                                                                       IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                                                        </StackPanel>
+                                                                        <TextBlock Text="{Binding ResultText}" Classes="caption"
+                                                                                   TextWrapping="Wrap" IsVisible="{Binding IsFinished}" />
+                                                                    </StackPanel>
+                                                                    <StackPanel Grid.Column="2" Margin="8,0,0,0">
+                                                                        <TextBlock Text="{Binding StartedText}" Classes="caption" />
+                                                                        <Button Classes="ghost" Padding="4" HorizontalAlignment="Right"
+                                                                                Command="{Binding CancelCommand}"
+                                                                                IsVisible="{Binding IsRunning}" ToolTip.Tip="Cancel">
+                                                                            <ic:SymbolIcon Symbol="Dismiss" FontSize="12" />
+                                                                        </Button>
+                                                                    </StackPanel>
+                                                                </Grid>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </ScrollViewer>
+                                        </Grid>
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+
+                            <TextBlock Grid.Column="2" Text="{Binding SelectionText}"
                                        Classes="secondary" FontSize="12" VerticalAlignment="Center" />
                         </Grid>
                     </Border>

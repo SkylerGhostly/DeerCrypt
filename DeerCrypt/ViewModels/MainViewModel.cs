@@ -70,6 +70,9 @@ namespace DeerCrypt.ViewModels
         [RelayCommand]
         private async Task NewVaultAsync( )
         {
+            // Opening another vault closes this one; stop its work first (or back out)
+            if( IsVaultOpen && !await CloseCurrentVaultAsync( ) ) return;
+
             var dialog = new CreateVaultDialog
             {
                 DataContext = new CreateVaultViewModel( _vaultService )
@@ -83,6 +86,9 @@ namespace DeerCrypt.ViewModels
         [RelayCommand]
         private async Task OpenVaultAsync( )
         {
+            // Opening another vault closes this one; stop its work first (or back out)
+            if( IsVaultOpen && !await CloseCurrentVaultAsync( ) ) return;
+
             var dialog = new OpenVaultDialog
             {
                 DataContext = new OpenVaultViewModel( _vaultService )
@@ -96,6 +102,9 @@ namespace DeerCrypt.ViewModels
         [RelayCommand]
         private async Task OpenRecentAsync( string path )
         {
+            // Opening another vault closes this one; stop its work first (or back out)
+            if( IsVaultOpen && !await CloseCurrentVaultAsync( ) ) return;
+
             var dialog = new OpenVaultDialog
             {
                 DataContext = new OpenVaultViewModel( _vaultService, path )
@@ -113,30 +122,61 @@ namespace DeerCrypt.ViewModels
             SyncRecentVaults( );
         }
 
-        [RelayCommand]
-        private async Task CloseVaultAsync( )
-        {
-            if( !await ConfirmCloseAsync( ) ) return;
-
-            await _vaultService.CloseAsync( );
-            IsVaultOpen  = false;
-            WindowTitle  = "DeerCrypt";
-            VaultName    = string.Empty;
-            VaultBrowser = null;
-        }
 
         /// <summary>
         /// Locks the vault immediately: closes it, zeroes the key, and closes viewers.
         /// Only asks first when files are open in external apps, since those edits would be lost.
         /// </summary>
+        /// <summary>
+        /// Locks the vault immediately: cancels background work, closes files open in other apps,
+        /// zeroes the key, and closes viewers. Only asks first when something would be lost.
+        /// </summary>
         [RelayCommand]
-        private async Task LockVaultAsync( )
-        {
-            if( !IsVaultOpen ) return;
+        private async Task LockVaultAsync( ) => await CloseCurrentVaultAsync( );
 
-            if( VaultBrowser?.HasCheckedOutFiles == true )
+        /// <summary>Used when the window is closing. Returns false if the user chose to keep the app open.</summary>
+        public Task<bool> CloseForExitAsync( ) => CloseCurrentVaultAsync( );
+
+        /// <summary>
+        /// Stops everything tied to the open vault and closes it. Asks first only when background
+        /// work would be cancelled or edits in other apps would be lost. Returns false if the user backs out.
+        /// </summary>
+        private async Task<bool> CloseCurrentVaultAsync( )
+        {
+            if( !IsVaultOpen ) return true;
+
+            var browser    = VaultBrowser;
+            int running    = browser?.Activities.RunningCount ?? 0;
+            bool checkedOut = browser?.HasCheckedOutFiles == true;
+
+            if( running > 0 || checkedOut )
             {
-                if( !await ConfirmCloseAsync( ) ) return;
+                var lines = new System.Collections.Generic.List<string>( );
+                if( running > 0 )
+                    lines.Add( $"{running} background task{( running == 1 ? "" : "s" )} will be cancelled. " +
+                               "Files that were already finished stay in the vault; the one in progress is rolled back." );
+                if( checkedOut )
+                    lines.Add( "Files open in other apps will be closed, and changes you haven't saved back will be lost." );
+
+                var confirmVm = new ConfirmDialogViewModel
+                {
+                    Title       = "Lock vault",
+                    Message     = "Lock the vault now?",
+                    Detail      = string.Join( "\n\n", lines ),
+                    ConfirmText = "Lock",
+                    CancelText  = "Keep working",
+                    Tone        = DialogTone.Warning
+                };
+
+                bool? result = await new ConfirmDialog { DataContext = confirmVm }
+                    .ShowDialog<bool?>( GetMainWindow( ) ?? throw new InvalidOperationException( "No main window" ) );
+                if( result != true ) return false;
+            }
+
+            if( browser != null )
+            {
+                await browser.Activities.CancelAllAndWaitAsync( );
+                await browser.CloseAllCheckedOutFilesAsync( );
             }
 
             await _vaultService.CloseAsync( );
@@ -144,6 +184,7 @@ namespace DeerCrypt.ViewModels
             WindowTitle  = "DeerCrypt";
             VaultName    = string.Empty;
             VaultBrowser = null;
+            return true;
         }
 
         /// <summary>Opens a vault file dropped onto the welcome screen (asks for its password).</summary>
@@ -177,31 +218,6 @@ namespace DeerCrypt.ViewModels
             OnPropertyChanged( nameof( IsCompact ) );
         }
 
-        private async Task<bool> ConfirmCloseAsync( )
-        {
-            if( !IsVaultOpen ) return true;
-
-            string detail = VaultBrowser?.HasCheckedOutFiles == true
-                ? "Warning: files are currently open for editing. Unsaved changes will be lost."
-                : "The vault will be locked.";
-
-            var confirmVm = new ConfirmDialogViewModel
-            {
-                Title       = "Close Vault",
-                Message     = "Are you sure you want to close the vault?",
-                Detail      = detail,
-                ConfirmText = "Close",
-                CancelText  = "Cancel"
-            };
-
-            bool? result = await new ConfirmDialog { DataContext = confirmVm }
-                .ShowDialog<bool?>( GetMainWindow( ) ?? throw new InvalidOperationException( "No main window" ) );
-
-            if( result == true && VaultBrowser != null )
-                await VaultBrowser.CloseAllCheckedOutFilesAsync( );
-
-            return result == true;
-        }
 
         private static Window? GetMainWindow( ) =>
             ( Application.Current?.ApplicationLifetime

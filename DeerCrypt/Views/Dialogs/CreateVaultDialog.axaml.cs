@@ -38,7 +38,7 @@ namespace DeerCrypt.Views.Dialogs
                 {
                     var files = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
                     {
-                        Title           = "Create Vault",
+                        Title           = "Save the new vault as",
                         SuggestedFileName = "MyVault",
                         FileTypeChoices =
                         [

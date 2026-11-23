@@ -19,10 +19,10 @@ namespace DeerCryptLib.Vault
     /// retained in memory.  A media player buffering a few seconds ahead or seeking back
     /// a short distance will typically hit the cache and pay no decrypt cost.</para>
     ///
-    /// <para><b>Thread-safety:</b> this class is <em>not</em> thread-safe.  The underlying
-    /// <see cref="VaultFile"/> connection is shared; only one reader should be active on
-    /// a connection at a time.  If you need concurrent playback of multiple files, open
-    /// separate <see cref="VaultFile"/> instances.</para>
+    /// <para><b>Thread-safety:</b> a single stream instance is <em>not</em> thread-safe
+    /// (its position and cache are unsynchronized). Chunk fetches go through the owning
+    /// <see cref="VaultFile"/>'s gate, so several streams and background operations can
+    /// share one vault safely.</para>
     ///
     /// <para>Obtain an instance via <see cref="VaultFile.OpenReadStreamAsync"/>.</para>
     /// </summary>

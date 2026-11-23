@@ -7,6 +7,10 @@ namespace DeerCrypt.ViewModels.Dialogs
     {
         public string FolderName { get; } = manifest.RootName;
         public string SummaryText { get; } = $"Add \"{manifest.RootName}\" to the vault?";
+
+        public string FileCountText   { get; } = manifest.TotalFiles.ToString( "N0" );
+        public string FolderCountText { get; } = manifest.TotalFolders.ToString( "N0" );
+        public string SizeText        { get; } = Converters.FileSizeConverter.Format( manifest.TotalSize );
         public string DetailText { get; } =
                 $"{manifest.TotalFiles} file{( manifest.TotalFiles == 1 ? "" : "s" )}  •  " +
                 $"{manifest.TotalFolders} folder{( manifest.TotalFolders == 1 ? "" : "s" )}  •  " +

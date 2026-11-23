@@ -9,7 +9,18 @@ namespace DeerCryptLib.Vault
     {
         #region Internals - Connection & Schema
 
-        private static SqliteConnection OpenConnection( string path, string password, SqliteOpenMode mode = SqliteOpenMode.ReadWriteCreate )
+        /// <summary>
+        /// Opens a connection keyed with the vault password through Microsoft.Data.Sqlite's own
+        /// <c>Password=</c> support (the same mechanism vaults have always been opened with).
+        /// This also works on a vault left in WAL mode by a crash. Note: the library keeps the
+        /// password in the connection's connection string while the connection is open.
+        /// Throws <see cref="VaultPasswordException"/> if the password doesn't decrypt the file.
+        /// </summary>
+        private static async Task<SqliteConnection> OpenConnectionAsync(
+            string path,
+            string password,
+            SqliteOpenMode mode,
+            CancellationToken cancellationToken )
         {
             SQLitePCL.Batteries_V2.Init( );
 
@@ -25,18 +36,82 @@ namespace DeerCryptLib.Vault
 
             try
             {
-                connection.Open( );
+                await connection.OpenAsync( cancellationToken );
                 return connection;
             }
             catch( SqliteException ex ) when( ex.SqliteErrorCode == 26 )
             {
-                connection.Dispose( );
+                await connection.DisposeAsync( );
                 throw new VaultPasswordException( "The password is incorrect.", ex );
             }
             catch
             {
-                connection.Dispose( );
+                await connection.DisposeAsync( );
                 throw;
+            }
+        }
+
+        /// <summary>
+        /// Switches the writer to WAL and opens the reader pool. Returns no readers (and leaves the
+        /// vault in rollback mode) if WAL can't be enabled on this filesystem; reads then share the writer.
+        /// </summary>
+        private static async Task<SqliteConnection [ ]> OpenReadersAsync(
+            SqliteConnection writer,
+            string path,
+            string password,
+            CancellationToken cancellationToken )
+        {
+            string? mode;
+            await using( SqliteCommand cmd = new( "PRAGMA journal_mode = WAL;", writer ) )
+                mode = await cmd.ExecuteScalarAsync( cancellationToken ) as string;
+
+            if( !string.Equals( mode, "wal", StringComparison.OrdinalIgnoreCase ) )
+                return [ ];
+
+            // Durability: sync the WAL on every commit. Keep the WAL file from staying huge after
+            // big transactions once they're checkpointed.
+            await ExecuteNonQueryAsync( writer, "PRAGMA synchronous = FULL",               cancellationToken );
+            await ExecuteNonQueryAsync( writer, "PRAGMA journal_size_limit = 67108864",    cancellationToken );
+
+            List<SqliteConnection> readers = [ ];
+            try
+            {
+                for( int i = 0; i < ReaderCount; i++ )
+                {
+                    SqliteConnection reader = await OpenConnectionAsync( path, password, SqliteOpenMode.ReadWrite, cancellationToken );
+                    readers.Add( reader );
+                    await ExecuteNonQueryAsync( reader, "PRAGMA busy_timeout = 30000", cancellationToken );
+                    await ExecuteNonQueryAsync( reader, "PRAGMA query_only = ON",      cancellationToken );
+                }
+                return [ .. readers ];
+            }
+            catch
+            {
+                foreach( var r in readers ) await r.DisposeAsync( );
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Folds the WAL back into the vault file and returns it to rollback-journal mode so the
+        /// locked vault is a single file again. Best effort: if another process still has the
+        /// vault open this fails harmlessly and the vault simply stays in (valid) WAL mode.
+        /// </summary>
+        private static async Task RestoreRollbackJournalAsync( SqliteConnection writer )
+        {
+            try
+            {
+                await ExecuteNonQueryAsync( writer, "PRAGMA wal_checkpoint(TRUNCATE)", CancellationToken.None );
+                await ExecuteNonQueryAsync( writer, "PRAGMA journal_mode = DELETE",    CancellationToken.None );
+            }
+            catch { }
+        }
+
+        private static void DeleteSidecarFiles( string path )
+        {
+            foreach( string suffix in new [ ] { "-wal", "-shm", "-journal" } )
+            {
+                try { if( File.Exists( path + suffix ) ) File.Delete( path + suffix ); } catch { }
             }
         }
 
@@ -44,6 +119,7 @@ namespace DeerCryptLib.Vault
             SqliteConnection connection,
             CancellationToken cancellationToken )
         {
+            await ExecuteNonQueryAsync( connection, "PRAGMA busy_timeout = 30000",  cancellationToken );
             await ExecuteNonQueryAsync( connection, "PRAGMA foreign_keys = ON",    cancellationToken );
             await ExecuteNonQueryAsync( connection, "PRAGMA synchronous = NORMAL", cancellationToken );
             // All pages are ciphertext - zeroing freed pages adds write overhead with no security benefit.
@@ -151,6 +227,7 @@ namespace DeerCryptLib.Vault
         /// Used by ExtractAsync - does NOT include sha256, that's fetched separately.
         /// </summary>
         private async Task<VaultEntry?> ReadVaultEntryAsync(
+            SqliteConnection db,
             string fileId,
             CancellationToken cancellationToken )
         {
@@ -160,7 +237,7 @@ namespace DeerCryptLib.Vault
                 WHERE  id = @id
                 """;
 
-            await using SqliteCommand    cmd    = new(sql, _connection);
+            await using SqliteCommand    cmd    = new(sql, db);
             cmd.Parameters.AddWithValue( "@id", fileId );
 
             await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
@@ -170,12 +247,13 @@ namespace DeerCryptLib.Vault
         }
 
         private async Task<byte [ ]> ReadFileSha256Async(
+            SqliteConnection db,
             string fileId,
             CancellationToken cancellationToken )
         {
             const string sql = "SELECT sha256 FROM vault_files WHERE id = @id";
 
-            await using SqliteCommand    cmd    = new(sql, _connection);
+            await using SqliteCommand    cmd    = new(sql, db);
             cmd.Parameters.AddWithValue( "@id", fileId );
 
             await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
@@ -186,6 +264,7 @@ namespace DeerCryptLib.Vault
         }
 
         private async Task<byte [ ]?> ReadVaultChunkAsync(
+            SqliteConnection db,
             string fileId,
             int chunkIndex,
             CancellationToken cancellationToken )
@@ -195,7 +274,7 @@ namespace DeerCryptLib.Vault
                 WHERE file_id = @fileId AND chunk_index = @chunkIndex
                 """;
 
-            await using SqliteCommand    cmd    = new(sql, _connection);
+            await using SqliteCommand    cmd    = new(sql, db);
             cmd.Parameters.AddWithValue( "@fileId", fileId );
             cmd.Parameters.AddWithValue( "@chunkIndex", chunkIndex );
 
@@ -276,12 +355,13 @@ namespace DeerCryptLib.Vault
         }
 
         private async Task<int> GetChunkCountAsync(
+            SqliteConnection db,
             string fileId,
             CancellationToken cancellationToken )
         {
             const string sql = "SELECT chunk_count FROM vault_files WHERE id = @id";
 
-            await using SqliteCommand    cmd    = new(sql, _connection);
+            await using SqliteCommand    cmd    = new(sql, db);
             cmd.Parameters.AddWithValue( "@id", fileId );
 
             await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
@@ -291,6 +371,7 @@ namespace DeerCryptLib.Vault
         }
 
         private async Task<int> GetTotalChunkCountAsync(
+            SqliteConnection db,
             List<string> fileIds,
             CancellationToken cancellationToken )
         {
@@ -299,7 +380,7 @@ namespace DeerCryptLib.Vault
             string paramList = string.Join(", ", fileIds.Select((_, i) => $"@id{i}"));
             string sql       = $"SELECT SUM(chunk_count) FROM vault_files WHERE id IN ({paramList})";
 
-            await using SqliteCommand cmd = new(sql, _connection);
+            await using SqliteCommand cmd = new(sql, db);
             for( int i = 0; i < fileIds.Count; i++ )
                 cmd.Parameters.AddWithValue( $"@id{i}", fileIds [ i ] );
 
@@ -308,12 +389,13 @@ namespace DeerCryptLib.Vault
         }
 
         private async Task<bool> DirectoryExistsAsync(
+            SqliteConnection db,
             string directoryId,
             CancellationToken cancellationToken )
         {
             const string sql = "SELECT COUNT(1) FROM vault_directories WHERE id = @id";
 
-            await using SqliteCommand cmd = new(sql, _connection);
+            await using SqliteCommand cmd = new(sql, db);
             cmd.Parameters.AddWithValue( "@id", directoryId );
 
             object? result = await cmd.ExecuteScalarAsync(cancellationToken);
@@ -321,11 +403,12 @@ namespace DeerCryptLib.Vault
         }
 
         private async Task<bool> IsDescendantOrSelfAsync(
+            SqliteConnection db,
             string dirId,
             string targetId,
             CancellationToken cancellationToken )
         {
-            if( !await DirectoryExistsAsync( dirId, cancellationToken ) )
+            if( !await DirectoryExistsAsync( db, dirId, cancellationToken ) )
                 return false;
 
             const string sql = """
@@ -338,7 +421,7 @@ namespace DeerCryptLib.Vault
                 SELECT COUNT(1) FROM dir_tree WHERE id = @targetId
                 """;
 
-            await using SqliteCommand cmd = new(sql, _connection);
+            await using SqliteCommand cmd = new(sql, db);
             cmd.Parameters.AddWithValue( "@rootId", dirId );
             cmd.Parameters.AddWithValue( "@targetId", targetId );
 
@@ -347,6 +430,7 @@ namespace DeerCryptLib.Vault
         }
 
         private async Task<List<string>> GetAllFileIdsRecursiveAsync(
+            SqliteConnection db,
             string directoryId,
             CancellationToken cancellationToken )
         {
@@ -361,7 +445,7 @@ namespace DeerCryptLib.Vault
                 JOIN   dir_tree t ON f.directory_id = t.id
                 """;
 
-            await using SqliteCommand    cmd    = new(sql, _connection);
+            await using SqliteCommand    cmd    = new(sql, db);
             cmd.Parameters.AddWithValue( "@rootId", directoryId );
 
             await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
@@ -377,6 +461,7 @@ namespace DeerCryptLib.Vault
         /// Reads a directory entry by ID. Returns null if not found.
         /// </summary>
         private async Task<VaultDirectoryEntry?> GetDirectoryEntryAsync(
+            SqliteConnection db,
             string directoryId,
             CancellationToken cancellationToken )
         {
@@ -386,7 +471,7 @@ namespace DeerCryptLib.Vault
         WHERE  id = @id
         """;
 
-            await using SqliteCommand    cmd    = new(sql, _connection);
+            await using SqliteCommand    cmd    = new(sql, db);
             cmd.Parameters.AddWithValue( "@id", directoryId );
 
             await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
@@ -404,6 +489,7 @@ namespace DeerCryptLib.Vault
         ///     relativePath = "2024\img.jpg"
         /// </summary>
         private async Task<List<(VaultEntry File, string RelativePath)>> GetFilesWithRelativePathsAsync(
+            SqliteConnection db,
             string rootDirectoryId,
             CancellationToken cancellationToken )
         {
@@ -441,7 +527,7 @@ namespace DeerCryptLib.Vault
             ORDER  BY t.relative_path, f.name
             """;
 
-            await using SqliteCommand    cmd    = new(sql, _connection);
+            await using SqliteCommand    cmd    = new(sql, db);
             cmd.Parameters.AddWithValue( "@rootId", rootDirectoryId );
 
             await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
@@ -462,6 +548,7 @@ namespace DeerCryptLib.Vault
         }
 
         private async Task<List<VaultDirectoryEntry>> ListDirectoriesAsync(
+            SqliteConnection db,
             string parentId,
             CancellationToken cancellationToken )
         {
@@ -472,7 +559,7 @@ namespace DeerCryptLib.Vault
                 ORDER  BY name COLLATE NOCASE
                 """;
 
-            await using SqliteCommand    cmd    = new(sql, _connection);
+            await using SqliteCommand    cmd    = new(sql, db);
             cmd.Parameters.AddWithValue( "@parentId", parentId );
 
             await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
@@ -485,6 +572,7 @@ namespace DeerCryptLib.Vault
         }
 
         private async Task<List<VaultEntry>> ListFilesAsync(
+            SqliteConnection db,
             string directoryId,
             CancellationToken cancellationToken )
         {
@@ -495,7 +583,7 @@ namespace DeerCryptLib.Vault
                 ORDER  BY name COLLATE NOCASE
                 """;
 
-            await using SqliteCommand    cmd    = new(sql, _connection);
+            await using SqliteCommand    cmd    = new(sql, db);
             cmd.Parameters.AddWithValue( "@directoryId", directoryId );
 
             await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
@@ -508,11 +596,12 @@ namespace DeerCryptLib.Vault
         }
 
         private async Task<List<(string FileId, int ChunkIndex)>> GetAllChunkKeysAsync(
+            SqliteConnection db,
             CancellationToken cancellationToken )
         {
             const string sql = "SELECT file_id, chunk_index FROM vault_chunks ORDER BY file_id, chunk_index";
 
-            await using SqliteCommand    cmd    = new(sql, _connection);
+            await using SqliteCommand    cmd    = new(sql, db);
             await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
             List<(string, int)> keys = [];
@@ -561,6 +650,7 @@ namespace DeerCryptLib.Vault
         /// Throws <see cref="VaultItemNotFoundException"/> if the file is not present.
         /// </summary>
         private async Task<(long OriginalSize, int ChunkSize, int ChunkCount)> ReadStreamMetaAsync(
+            SqliteConnection db,
             string fileId,
             CancellationToken cancellationToken )
         {
@@ -570,7 +660,7 @@ namespace DeerCryptLib.Vault
                 WHERE  id = @id
                 """;
 
-            await using SqliteCommand    cmd    = new(sql, _connection);
+            await using SqliteCommand    cmd    = new(sql, db);
             cmd.Parameters.AddWithValue( "@id", fileId );
 
             await using SqliteDataReader reader = await cmd.ExecuteReaderAsync( cancellationToken );
@@ -604,6 +694,7 @@ namespace DeerCryptLib.Vault
         /// inside the same transaction for the final cleanup DELETE.
         /// </summary>
         private async Task DeleteChunksInBatchesAsync(
+            SqliteConnection db,
             List<string> fileIds,
             Dictionary<string, int> chunkCounts,
             int totalChunks,
@@ -614,7 +705,7 @@ namespace DeerCryptLib.Vault
             const int batchSize = 10;
 
             await using SqliteTransaction transaction =
-                await _connection.BeginTransactionAsync(cancellationToken) as SqliteTransaction
+                await db.BeginTransactionAsync(cancellationToken) as SqliteTransaction
                 ?? throw new InvalidOperationException("Failed to begin transaction.");
 
             try
@@ -639,7 +730,7 @@ namespace DeerCryptLib.Vault
                                   ORDER  BY chunk_index
                                   LIMIT  @batchSize
                               )
-                            """, _connection, transaction);
+                            """, db, transaction);
 
                         cmd.Parameters.AddWithValue( "@fileId", fileId );
                         cmd.Parameters.AddWithValue( "@batchSize", batchSize );

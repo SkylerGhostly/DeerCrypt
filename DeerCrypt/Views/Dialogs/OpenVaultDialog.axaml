@@ -1,118 +1,84 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ic="using:FluentIcons.Avalonia"
         xmlns:vm="using:DeerCrypt.ViewModels.Dialogs"
         x:Class="DeerCrypt.Views.Dialogs.OpenVaultDialog"
         x:DataType="vm:OpenVaultViewModel"
-        Background="{DynamicResource MainBackgroundBrush}"
+        Background="{DynamicResource AppBackgroundBrush}"
         Title="Open vault"
-        Width="460"
+        Width="480"
         SizeToContent="Height"
         CanResize="False"
         WindowStartupLocation="CenterOwner">
 
     <StackPanel>
-
-        <!-- Header -->
-        <StackPanel Margin="28,24,28,18" Spacing="4" HorizontalAlignment="Center">
-            <Border Width="56" Height="56"
-                    CornerRadius="15"
-                    Background="{DynamicResource SelectedBrush}"
-                    HorizontalAlignment="Center">
-                <ic:SymbolIcon Symbol="ShieldLock" FontSize="28"
-                               Foreground="{DynamicResource AccentBrush}" />
-            </Border>
-            <TextBlock Text="Open vault"
-                       FontSize="18"
-                       FontWeight="SemiBold"
-                       HorizontalAlignment="Center"
-                       Margin="0,4,0,0" />
-            <TextBlock Text="Select your vault file and enter its password."
-                       FontSize="12"
-                       HorizontalAlignment="Center"
-                       TextAlignment="Center"
-                       TextWrapping="Wrap"
-                       Foreground="{DynamicResource TextSecondaryBrush}"
-                       MaxWidth="320" />
-        </StackPanel>
-
-        <!-- Separator -->
-        <Rectangle Height="1" Fill="{DynamicResource HairlineBrush}" />
-
-        <!-- Body -->
-        <StackPanel Margin="28,20,28,24" Spacing="4">
-
-            <!-- Vault Location -->
-            <TextBlock Text="Vault file"
-                       FontSize="12"
-                       FontWeight="SemiBold"
-                       Foreground="{DynamicResource TextSecondaryBrush}"
-                       Margin="0,0,0,6" />
-            <Grid ColumnDefinitions="*,Auto">
-                <TextBox Grid.Column="0"
-                         Watermark="Path to vault file…"
-                         Text="{Binding VaultPath}"
-                         Margin="0,0,8,0" />
-                <Button Grid.Column="1"
-                        Content="Browse…"
-                        Command="{Binding BrowseCommand}"
-                        Padding="12,6" />
+        <StackPanel Margin="24,22,24,20" Spacing="18">
+            <Grid ColumnDefinitions="Auto,*">
+                <Border Classes="dialog-icon">
+                    <ic:SymbolIcon Symbol="ShieldLock" />
+                </Border>
+                <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="Unlock a vault" Classes="dialog-title" />
+                    <TextBlock Text="Choose the vault file and enter its password." Classes="dialog-subtitle" />
+                </StackPanel>
             </Grid>
 
-            <!-- Password -->
-            <TextBlock Text="Password"
-                       FontSize="12"
-                       FontWeight="SemiBold"
-                       Foreground="{DynamicResource TextSecondaryBrush}"
-                       Margin="0,14,0,6" />
-            <Grid ColumnDefinitions="*,Auto">
-                <TextBox Grid.Column="0"
-                         Watermark="Password"
-                         PasswordChar="●"
-                         Text="{Binding Password}"
-                         IsVisible="{Binding !ShowPassword}"
-                         Margin="0,0,8,0" />
-                <TextBox Grid.Column="0"
-                         Watermark="Password"
-                         Text="{Binding Password}"
-                         IsVisible="{Binding ShowPassword}"
-                         Margin="0,0,8,0" />
-                <ToggleButton Grid.Column="1"
-                              IsChecked="{Binding ShowPassword}"
-                              Width="36"
-                              Height="32"
-                              Padding="0"
-                              FontSize="15"
-                              HorizontalContentAlignment="Center"
-                              VerticalContentAlignment="Center"
-                              ToolTip.Tip="Show / hide password">
-                    <ic:SymbolIcon Symbol="Eye" />
-                </ToggleButton>
-            </Grid>
-
-            <!-- Error message -->
-            <TextBlock Text="{Binding ErrorMessage}"
-                       Foreground="{DynamicResource DangerBrush}"
-                       FontSize="12"
-                       Margin="0,8,0,0"
-                       IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                       TextWrapping="Wrap" />
-
-            <!-- Buttons -->
-            <StackPanel Orientation="Horizontal"
-                        HorizontalAlignment="Right"
-                        Spacing="8"
-                        Margin="0,16,0,0">
-                <Button Content="Cancel"
-                        Click="OnCancelClicked"
-                        Padding="14,6" />
-                <Button Content="Open vault"
-                        Command="{Binding OpenCommand}"
-                        Classes="accent"
-                        IsDefault="True"
-                        Padding="14,6" />
+            <StackPanel>
+                <TextBlock Text="Vault file" Classes="field-label" />
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBox Grid.Column="0" Watermark="/path/to/vault.dcv" Text="{Binding VaultPath}" Margin="0,0,8,0">
+                        <TextBox.InnerLeftContent>
+                            <ic:SymbolIcon Symbol="Document" Margin="10,0,0,0" Foreground="{DynamicResource TextMutedBrush}" />
+                        </TextBox.InnerLeftContent>
+                    </TextBox>
+                    <Button Grid.Column="1" Classes="secondary" Content="Browse…" Command="{Binding BrowseCommand}" />
+                </Grid>
             </StackPanel>
 
+            <StackPanel>
+                <TextBlock Text="Password" Classes="field-label" />
+                <TextBox x:Name="PasswordBox"
+                         Watermark="Vault password"
+                         PasswordChar="●"
+                         RevealPassword="{Binding ShowPassword}"
+                         Text="{Binding Password}">
+                    <TextBox.InnerLeftContent>
+                        <ic:SymbolIcon Symbol="Key" Margin="10,0,0,0" Foreground="{DynamicResource TextMutedBrush}" />
+                    </TextBox.InnerLeftContent>
+                    <TextBox.InnerRightContent>
+                        <ToggleButton Classes="ghost" Padding="6,4" Margin="0,0,4,0"
+                                      IsChecked="{Binding ShowPassword}"
+                                      ToolTip.Tip="Show or hide the password">
+                            <ic:SymbolIcon Symbol="Eye" FontSize="15" />
+                        </ToggleButton>
+                    </TextBox.InnerRightContent>
+                </TextBox>
+            </StackPanel>
+
+            <Border Classes="notice-error"
+                    IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <ic:SymbolIcon Symbol="ErrorCircle" FontSize="14" />
+                    <TextBlock Text="{Binding ErrorMessage}" FontSize="12.5" TextWrapping="Wrap" MaxWidth="380" />
+                </StackPanel>
+            </Border>
+
+            <StackPanel Spacing="6" IsVisible="{Binding IsBusy}">
+                <ProgressBar IsIndeterminate="True" Classes="meter" />
+                <TextBlock Text="Deriving the key from your password…" Classes="caption" />
+            </StackPanel>
         </StackPanel>
+
+        <Border Classes="dialog-footer">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button Classes="secondary" Content="Cancel" IsCancel="True" Click="OnCancelClicked" />
+                <Button Classes="primary" IsDefault="True" Command="{Binding OpenCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <ic:SymbolIcon Symbol="LockOpen" />
+                        <TextBlock Text="Unlock" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Border>
     </StackPanel>
 </Window>

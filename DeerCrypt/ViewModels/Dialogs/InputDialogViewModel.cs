@@ -23,6 +23,9 @@ namespace DeerCrypt.ViewModels.Dialogs
         [ObservableProperty]
         public partial string ConfirmText { get; set; } = "OK";
 
+        /// <summary>Icon shown in the dialog header.</summary>
+        public FluentIcons.Common.Symbol Icon { get; init; } = FluentIcons.Common.Symbol.Rename;
+
         [ObservableProperty]
         [NotifyCanExecuteChangedFor( nameof( ConfirmCommand ) )]
         public partial string Value { get; set; } = string.Empty;

@@ -24,7 +24,10 @@ namespace DeerCryptLib.Vault
             if( string.IsNullOrWhiteSpace( name ) )
                 throw new VaultOperationException( "Directory name cannot be empty." );
 
-            if( !await DirectoryExistsAsync( parentId, cancellationToken ) )
+            using var lease = await EnterWriteAsync( cancellationToken );
+            var db = lease.Db;
+
+            if( !await DirectoryExistsAsync( db, parentId, cancellationToken ) )
                 throw new VaultItemNotFoundException( parentId, "parent directory" );
 
             string id = Guid.NewGuid().ToString();
@@ -34,7 +37,7 @@ namespace DeerCryptLib.Vault
                 VALUES (@id, @name, @parentId, @createdAt)
                 """;
 
-            await using SqliteCommand cmd = new(sql, _connection);
+            await using SqliteCommand cmd = new(sql, db);
             cmd.Parameters.AddWithValue( "@id", id );
             cmd.Parameters.AddWithValue( "@name", name );
             cmd.Parameters.AddWithValue( "@parentId", parentId );
@@ -57,16 +60,19 @@ namespace DeerCryptLib.Vault
             if( directoryId == RootDirId )
                 throw new VaultOperationException( "The root directory cannot be removed." );
 
-            if( !await DirectoryExistsAsync( directoryId, cancellationToken ) )
+            using var lease = await EnterWriteAsync( cancellationToken );
+            var db = lease.Db;
+
+            if( !await DirectoryExistsAsync( db, directoryId, cancellationToken ) )
                 throw new VaultItemNotFoundException( directoryId, "directory" );
 
-            List<string> allFileIds = await GetAllFileIdsRecursiveAsync(directoryId, cancellationToken);
+            List<string> allFileIds = await GetAllFileIdsRecursiveAsync( db, directoryId, cancellationToken);
 
             if( allFileIds.Count == 0 )
             {
                 await using SqliteCommand cmd = new(
                     "DELETE FROM vault_directories WHERE id = @id",
-                    _connection);
+                    db);
                 cmd.Parameters.AddWithValue( "@id", directoryId );
                 await cmd.ExecuteNonQueryAsync( cancellationToken );
                 progress?.Report( 1.0 );
@@ -74,13 +80,14 @@ namespace DeerCryptLib.Vault
                 return;
             }
 
-            int totalChunks = await GetTotalChunkCountAsync(allFileIds, cancellationToken);
+            int totalChunks = await GetTotalChunkCountAsync( db, allFileIds, cancellationToken);
 
             Dictionary<string, int> chunkCounts = [];
             foreach( string id in allFileIds )
-                chunkCounts [ id ] = await GetChunkCountAsync( id, cancellationToken );
+                chunkCounts [ id ] = await GetChunkCountAsync( db, id, cancellationToken );
 
             await DeleteChunksInBatchesAsync(
+                db,
                 allFileIds,
                 chunkCounts,
                 totalChunks,
@@ -90,7 +97,7 @@ namespace DeerCryptLib.Vault
                     // Deleting the directory row cascades to vault_files and any remaining refs
                     await using SqliteCommand cmd = new(
                         "DELETE FROM vault_directories WHERE id = @id",
-                        _connection, transaction);
+                        db, transaction);
                     cmd.Parameters.AddWithValue( "@id", directoryId );
                     await cmd.ExecuteNonQueryAsync( ct );
                 },
@@ -116,12 +123,19 @@ namespace DeerCryptLib.Vault
             IProgress<double>? progress = null,
             CancellationToken cancellationToken = default )
         {
-            VaultDirectoryEntry dirEntry = await GetDirectoryEntryAsync(directoryId, cancellationToken)
-                ?? throw new VaultItemNotFoundException(directoryId, "directory");
+            VaultDirectoryEntry dirEntry;
+            List<(VaultEntry File, string RelativePath)> allFiles;
 
-            // Get every file in the tree along with its vault path relative to this directory
-            List<(VaultEntry File, string RelativePath)> allFiles =
-            await GetFilesWithRelativePathsAsync(directoryId, cancellationToken);
+            // Only the listing is gated here; each file's extraction gates itself chunk by chunk
+            using( var lease = await EnterReadAsync( cancellationToken ) )
+            {
+                var db = lease.Db;
+                dirEntry = await GetDirectoryEntryAsync( db, directoryId, cancellationToken )
+                    ?? throw new VaultItemNotFoundException( directoryId, "directory" );
+
+                // Every file in the tree along with its vault path relative to this directory
+                allFiles = await GetFilesWithRelativePathsAsync( db, directoryId, cancellationToken );
+            }
 
             if( allFiles.Count == 0 )
             {
@@ -157,6 +171,46 @@ namespace DeerCryptLib.Vault
         }
 
         /// <summary>
+        /// Counts everything beneath a directory (recursively): files, subfolders, and the
+        /// total original size of the files. Read-only.
+        /// </summary>
+        public async Task<DirectoryStats> GetDirectoryStatsAsync(
+            string directoryId,
+            CancellationToken cancellationToken = default )
+        {
+            using var lease = await EnterReadAsync( cancellationToken );
+            var db = lease.Db;
+
+            if( !await DirectoryExistsAsync( db, directoryId, cancellationToken ) )
+                throw new VaultItemNotFoundException( directoryId, "directory" );
+
+            const string sql = """
+                WITH RECURSIVE dir_tree(id) AS (
+                    SELECT id FROM vault_directories WHERE id = @rootId
+                    UNION ALL
+                    SELECT d.id FROM vault_directories d
+                    INNER JOIN dir_tree t ON d.parent_id = t.id
+                )
+                SELECT
+                    (SELECT COUNT(*) - 1 FROM dir_tree)                                           AS folders,
+                    (SELECT COUNT(*) FROM vault_files f JOIN dir_tree t ON f.directory_id = t.id)  AS files,
+                    (SELECT COALESCE(SUM(f.original_size), 0)
+                       FROM vault_files f JOIN dir_tree t ON f.directory_id = t.id)                AS total_size
+                """;
+
+            await using SqliteCommand cmd = new( sql, db );
+            cmd.Parameters.AddWithValue( "@rootId", directoryId );
+
+            await using SqliteDataReader reader = await cmd.ExecuteReaderAsync( cancellationToken );
+            await reader.ReadAsync( cancellationToken );
+
+            return new DirectoryStats(
+                FileCount:   (int)(long)reader [ "files" ],
+                FolderCount: (int)(long)reader [ "folders" ],
+                TotalSize:   (long)reader [ "total_size" ] );
+        }
+
+        /// <summary>
         /// Lists the immediate contents of a directory - subdirectories and files, one level deep.
         /// Pass <see cref="RootDirectoryId"/> to list the vault root.
         /// Both lists are sorted case-insensitively by name.
@@ -165,11 +219,14 @@ namespace DeerCryptLib.Vault
             string directoryId,
             CancellationToken cancellationToken = default )
         {
-            if( !await DirectoryExistsAsync( directoryId, cancellationToken ) )
+            using var lease = await EnterReadAsync( cancellationToken );
+            var db = lease.Db;
+
+            if( !await DirectoryExistsAsync( db, directoryId, cancellationToken ) )
                 throw new VaultItemNotFoundException( directoryId, "directory" );
 
-            List<VaultDirectoryEntry> directories = await ListDirectoriesAsync(directoryId, cancellationToken);
-            List<VaultEntry>          files       = await ListFilesAsync(directoryId, cancellationToken);
+            List<VaultDirectoryEntry> directories = await ListDirectoriesAsync( db, directoryId, cancellationToken);
+            List<VaultEntry>          files       = await ListFilesAsync( db, directoryId, cancellationToken);
 
             return new VaultListing( directories, files );
         }
