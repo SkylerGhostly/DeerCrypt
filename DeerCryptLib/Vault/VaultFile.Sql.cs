@@ -628,6 +628,8 @@ namespace DeerCryptLib.Vault
 
                     while( fileChunksDeleted < fileChunkCount )
                     {
+                        // Always take the first remaining batch - rows deleted by earlier
+                        // iterations are gone, so an OFFSET would skip live chunks.
                         await using SqliteCommand cmd = new("""
                             DELETE FROM vault_chunks
                             WHERE file_id = @fileId
@@ -635,16 +637,17 @@ namespace DeerCryptLib.Vault
                                   SELECT chunk_index FROM vault_chunks
                                   WHERE  file_id = @fileId
                                   ORDER  BY chunk_index
-                                  LIMIT  @batchSize OFFSET @offset
+                                  LIMIT  @batchSize
                               )
                             """, _connection, transaction);
 
                         cmd.Parameters.AddWithValue( "@fileId", fileId );
                         cmd.Parameters.AddWithValue( "@batchSize", batchSize );
-                        cmd.Parameters.AddWithValue( "@offset", fileChunksDeleted );
                         int affected = await cmd.ExecuteNonQueryAsync(cancellationToken);
+                        if( affected == 0 ) break; // fewer chunks stored than declared
+
                         deletedSoFar += affected;
-                        fileChunksDeleted = Math.Min( fileChunksDeleted + batchSize, fileChunkCount );
+                        fileChunksDeleted += affected;
                         progress?.Report( (double)deletedSoFar / totalChunks * 0.95 );
                     }
                 }

@@ -20,7 +20,7 @@ Store your files in an encrypted vault accessible via password. View your files 
 - **File manager** - add, remove, rename, move, and extract files and folders. Drag & drop from Explorer.
 - **Search** - live search with paths visible to see where they're from.
 - **Navigation** - breadcrumb style with back/forward buttons.
-- **Vault utilities** - compact (defragment and save space after deletions), integrity check, and password change.
+- **Vault utilities** - compact (defragment and save space after deletions) and integrity check.
 
 ---
 

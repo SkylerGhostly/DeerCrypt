@@ -1773,6 +1773,12 @@ namespace DeerCrypt.ViewModels
                         return; // file was deleted externally - nothing more to do
                     }
 
+                    if( !OperatingSystem.IsWindows( ) )
+                    {
+                        await CheckForSavedChangesAsync( item, checkedOut, cancellationToken ).ConfigureAwait( false );
+                        continue;
+                    }
+
                     FileStream? fs = null;
                     try
                     {
@@ -1811,41 +1817,10 @@ namespace DeerCrypt.ViewModels
 
                 string currentHex = Convert.ToHexString(currentSha256);
 
-                if( currentHex != checkedOut.OriginalSha256Hex )
+                if( currentHex != checkedOut.Sha256Hex )
                 {
                     // File was modified - show save dialog, then fall through to cleanup.
-                    var confirmVm = new ConfirmDialogViewModel
-                    {
-                        Title       = "Save Changes",
-                        Message     = $"\"{item.DisplayName}\" was modified while open.",
-                        Detail      = "Save changes back to the vault?",
-                        ConfirmText = "Save to Vault",
-                        CancelText  = "Discard"
-                    };
-
-                    bool? result = await new ConfirmDialog { DataContext = confirmVm }
-                        .ShowDialog<bool?>( OwnerWindow ?? throw new InvalidOperationException( "No owner window" ) );
-
-                    if( result == true )
-                    {
-                        try
-                        {
-                            await Vault.UpdateAsync(
-                                checkedOut.FileId,
-                                checkedOut.TempPath,
-                                cancellationToken: CancellationToken.None );
-
-                            if( _currentDirectory != null )
-                                await LoadItemsAsync( _currentDirectory.DirectoryId );
-
-                            await RefreshVaultInfoAsync( );
-                            StatusMessage = $"\"{item.DisplayName}\" saved to vault.";
-                        }
-                        catch( Exception ex )
-                        {
-                            StatusMessage = $"Failed to save changes: {ex.Message}";
-                        }
-                    }
+                    await PromptSaveChangesAsync( item, checkedOut );
                 }
                 else
                 {
@@ -1875,6 +1850,105 @@ namespace DeerCrypt.ViewModels
             {
                 if( doCleanup )
                     CleanupCheckedOutFile( item, checkedOut, deleted: false );
+            }
+        }
+
+        /// <summary>
+        /// Non-Windows change detection. File locks there are advisory, so FileShare.None
+        /// never fails and there is no reliable "the external app let go" signal - the
+        /// Windows release check would fire on the first poll and delete the temp file out
+        /// from under the app. Instead, watch for saves: once the temp file's write time has
+        /// changed and stayed put for a full poll cycle, offer to save it back to the vault.
+        /// The temp copy stays checked out until it is deleted or the vault is closed.
+        /// </summary>
+        private async Task CheckForSavedChangesAsync(
+            VaultItemViewModel item,
+            CheckedOutFile checkedOut,
+            CancellationToken cancellationToken )
+        {
+            try
+            {
+                DateTime writeTime = File.GetLastWriteTimeUtc( checkedOut.TempPath );
+
+                if( writeTime == checkedOut.LastWriteUtc )
+                {
+                    checkedOut.PendingWriteUtc = null;
+                    return;
+                }
+
+                // Wait one more cycle so we don't hash a file that is still being written
+                if( checkedOut.PendingWriteUtc != writeTime )
+                {
+                    checkedOut.PendingWriteUtc = writeTime;
+                    return;
+                }
+
+                checkedOut.LastWriteUtc    = writeTime;
+                checkedOut.PendingWriteUtc = null;
+
+                string currentHex;
+                await using( FileStream fs = new(
+                    checkedOut.TempPath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete ) )
+                {
+                    currentHex = Convert.ToHexString( await ComputeSha256Async( fs, cancellationToken ) );
+                }
+
+                if( currentHex == checkedOut.Sha256Hex )
+                    return;
+
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync( async ( ) =>
+                {
+                    var current = FindCurrentItem( checkedOut.FileId ) ?? item;
+                    await PromptSaveChangesAsync( current, checkedOut );
+                } );
+
+                // Saved or discarded, don't prompt again for this same content
+                checkedOut.Sha256Hex = currentHex;
+            }
+            catch( IOException )
+            {
+                // Mid-save rename or similar - try again next poll cycle
+            }
+        }
+
+        private async Task PromptSaveChangesAsync(
+            VaultItemViewModel item,
+            CheckedOutFile checkedOut )
+        {
+            var confirmVm = new ConfirmDialogViewModel
+            {
+                Title       = "Save Changes",
+                Message     = $"\"{item.DisplayName}\" was modified while open.",
+                Detail      = "Save changes back to the vault?",
+                ConfirmText = "Save to Vault",
+                CancelText  = "Discard"
+            };
+
+            bool? result = await new ConfirmDialog { DataContext = confirmVm }
+                .ShowDialog<bool?>( OwnerWindow ?? throw new InvalidOperationException( "No owner window" ) );
+
+            if( result == true )
+            {
+                try
+                {
+                    await Vault.UpdateAsync(
+                        checkedOut.FileId,
+                        checkedOut.TempPath,
+                        cancellationToken: CancellationToken.None );
+
+                    if( _currentDirectory != null )
+                        await LoadItemsAsync( _currentDirectory.DirectoryId );
+
+                    await RefreshVaultInfoAsync( );
+                    StatusMessage = $"\"{item.DisplayName}\" saved to vault.";
+                }
+                catch( Exception ex )
+                {
+                    StatusMessage = $"Failed to save changes: {ex.Message}";
+                }
             }
         }
 
@@ -1946,11 +2020,23 @@ namespace DeerCrypt.ViewModels
 
         public bool HasCheckedOutFiles => _checkedOutFiles.Count > 0;
 
-        private sealed record CheckedOutFile(
+        private sealed class CheckedOutFile(
             string FileId,
             string TempPath,
-            string OriginalSha256Hex,
-            CancellationTokenSource WatcherCts );
+            string Sha256Hex,
+            CancellationTokenSource WatcherCts )
+        {
+            public string                  FileId     { get; } = FileId;
+            public string                  TempPath   { get; } = TempPath;
+            public CancellationTokenSource WatcherCts { get; } = WatcherCts;
+
+            /// <summary>Hash of the content the vault currently holds for this checkout.</summary>
+            public string Sha256Hex { get; set; } = Sha256Hex;
+
+            // Non-Windows save detection (see CheckForSavedChangesAsync)
+            public DateTime  LastWriteUtc    { get; set; } = File.GetLastWriteTimeUtc( TempPath );
+            public DateTime? PendingWriteUtc { get; set; }
+        }
 
         /// <summary>
         /// IProgress&lt;double&gt; that fires at most every <see cref="MinTicks"/> (≈80 ms).

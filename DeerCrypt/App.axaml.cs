@@ -1,4 +1,3 @@
-using System;
 ﻿using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
@@ -7,6 +6,7 @@ using DeerCrypt.ViewModels;
 using DeerCrypt.Views;
 using LibVLCSharp.Shared;
 using SkiaSharp;
+using System;
 using System.IO;
 using System.Threading.Tasks;
 
@@ -19,13 +19,10 @@ namespace DeerCrypt
         public static SettingsService     SettingsService     { get; } = new( );
 
         // Lazy singleton - initialised on first media open, never disposed (app lifetime).
-        //private static LibVLC? _libVLC;
-        //public  static LibVLC  LibVLC => _libVLC ??= new LibVLC( enableDebugLogs: false, "--avcodec-hw=none" );
-	// Lazy singleton - initialised on first media open, never disposed (app lifetime).
-	private static LibVLC? _libVLC;
-	public  static LibVLC  LibVLC => _libVLC ??= OperatingSystem.IsLinux( )
-    ? new LibVLC( enableDebugLogs: false, "--avcodec-hw=none" )   // NVIDIA VA-API shim workaround; remove when on libvlc 4
-    : new LibVLC( enableDebugLogs: false );
+        private static LibVLC? _libVLC;
+        public  static LibVLC  LibVLC => _libVLC ??= OperatingSystem.IsLinux( )
+            ? new LibVLC( enableDebugLogs: false, "--avcodec-hw=none" ) // NVIDIA VA-API shim workaround; remove when on libvlc 4
+            : new LibVLC( enableDebugLogs: false );
 
         public override void Initialize( )
         {
