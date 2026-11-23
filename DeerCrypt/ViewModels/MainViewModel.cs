@@ -42,6 +42,108 @@ namespace DeerCrypt.ViewModels
             SyncRecentVaults( );
 
             RecentVaults.CollectionChanged += ( _, _ ) => OnPropertyChanged( nameof( HasRecentVaults ) );
+
+            _autoLockTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds( 10 ) };
+            _autoLockTimer.Tick += async ( _, _ ) => await CheckAutoLockAsync( );
+            _autoLockTimer.Start( );
+        }
+
+        // Auto-lock and the lock screen
+
+        private readonly Avalonia.Threading.DispatcherTimer _autoLockTimer;
+        private bool _autoLocking;
+
+        /// <summary>The vault that was locked from this window; the lock screen offers to unlock it again.</summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor( nameof( IsLockScreen ) )]
+        [NotifyPropertyChangedFor( nameof( LockedVaultName ) )]
+        public partial string? LockedVaultPath { get; set; }
+
+        public bool   IsLockScreen    => LockedVaultPath != null && !IsVaultOpen;
+        public string LockedVaultName => LockedVaultPath == null ? string.Empty : Path.GetFileNameWithoutExtension( LockedVaultPath );
+
+        [ObservableProperty] public partial string LockMessage { get; set; } = string.Empty;
+
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor( nameof( UnlockCommand ) )]
+        public partial string UnlockPassword { get; set; } = string.Empty;
+
+        [ObservableProperty] public partial string UnlockError { get; set; } = string.Empty;
+
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor( nameof( UnlockCommand ) )]
+        public partial bool IsUnlocking { get; set; }
+
+        [ObservableProperty] public partial bool ShowUnlockPassword { get; set; }
+
+        partial void OnIsVaultOpenChanged( bool value ) => OnPropertyChanged( nameof( IsLockScreen ) );
+
+        private bool CanUnlock => !IsUnlocking && UnlockPassword.Length > 0 && LockedVaultPath != null;
+
+        [RelayCommand( CanExecute = nameof( CanUnlock ) )]
+        private async Task UnlockAsync( )
+        {
+            if( LockedVaultPath is not { } path ) return;
+            UnlockError = string.Empty;
+            IsUnlocking = true;
+            try
+            {
+                await _vaultService.OpenAsync( path, UnlockPassword );
+                UnlockPassword = string.Empty;
+                LockedVaultPath = null;
+                OnVaultOpened( path );
+            }
+            catch( DeerCryptLib.Vault.VaultPasswordException ) { UnlockError = "That password doesn't unlock this vault."; }
+            catch( DeerCryptLib.Vault.VaultNotFoundException ) { UnlockError = "The vault file isn't there any more. It may have been moved or renamed."; }
+            catch( Exception ex )                              { UnlockError = $"Couldn't unlock: {ex.Message}"; }
+            finally
+            {
+                IsUnlocking = false;
+            }
+        }
+
+        /// <summary>Leaves the lock screen for the start page (to open or create another vault).</summary>
+        [RelayCommand]
+        private void LeaveLockScreen( )
+        {
+            UnlockPassword  = string.Empty;
+            UnlockError     = string.Empty;
+            LockedVaultPath = null;
+        }
+
+        /// <summary>Why auto-lock is holding off right now, or null if it may lock.</summary>
+        private string? AutoLockBlocker( )
+        {
+            if( VaultBrowser is not { } b ) return null;
+            if( b.Activities.RunningCount > 0 ) return "background tasks";
+            if( b.HasUnsavedDocuments )         return "unsaved edits";
+            if( b.HasCheckedOutFiles )          return "files open in other apps";
+            if( b.IsMediaPlaying )              return "media playing";
+            if( ( b.OwnerWindow ?? GetMainWindow( ) ) is { OwnedWindows.Count: > 0 } ) return "an open dialog";
+            return null;
+        }
+
+        private async Task CheckAutoLockAsync( )
+        {
+            int minutes = App.SettingsService.Settings.AutoLockMinutes;
+            if( _autoLocking || !IsVaultOpen || minutes <= 0 ) return;
+            if( IdleMonitor.IdleFor < TimeSpan.FromMinutes( minutes ) ) return;
+            if( AutoLockBlocker( ) != null ) return; // try again on the next tick
+
+            _autoLocking = true;
+            try
+            {
+                string? path = _vaultService.Vault?.FilePath;
+                if( await CloseCurrentVaultAsync( ) && path != null )
+                {
+                    LockMessage     = $"Locked after {minutes} minute{( minutes == 1 ? "" : "s" )} without activity.";
+                    LockedVaultPath = path;
+                }
+            }
+            finally
+            {
+                _autoLocking = false;
+            }
         }
 
         // Design-time constructor
@@ -51,6 +153,10 @@ namespace DeerCrypt.ViewModels
 
         public async Task OpenedAsync( string vaultPath, bool isNewVault )
         {
+            LockedVaultPath = null;
+            UnlockPassword  = string.Empty;
+            UnlockError     = string.Empty;
+            IdleMonitor.Touch( );
             IsVaultOpen = true;
             VaultName   = Path.GetFileNameWithoutExtension( vaultPath );
             WindowTitle = $"{VaultName} - DeerCrypt";
@@ -139,7 +245,15 @@ namespace DeerCrypt.ViewModels
         /// zeroes the key, and closes viewers. Only asks first when something would be lost.
         /// </summary>
         [RelayCommand]
-        private async Task LockVaultAsync( ) => await CloseCurrentVaultAsync( );
+        private async Task LockVaultAsync( )
+        {
+            string? path = _vaultService.Vault?.FilePath;
+            if( await CloseCurrentVaultAsync( ) && path != null )
+            {
+                LockMessage     = "Locked.";
+                LockedVaultPath = path;
+            }
+        }
 
         /// <summary>Used when the window is closing. Returns false if the user chose to keep the app open.</summary>
         public Task<bool> CloseForExitAsync( ) => CloseCurrentVaultAsync( );

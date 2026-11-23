@@ -34,6 +34,7 @@ namespace DeerCrypt
             SettingsService.Load( );
             ThemeService.Apply( SettingsService.Settings );
             CapsLock.Register( );
+            IdleMonitor.Register( );
 
             // Clean up any temp files left from a previous session
             CleanupTempDirectory( );

@@ -228,6 +228,17 @@ namespace DeerCrypt.Views
             var search = this.FindControl<TextBox>( "SearchBox" );
             if( search == null || _currentBrowser == null ) return;
 
+            // Ctrl+V: add files copied in a file manager, unless a text field (search, rename) has
+            // focus. A window KeyBinding can't be used: it fires even while a text box is focused.
+            if( e.KeyModifiers == KeyModifiers.Control && e.Key == Key.V
+                && FocusManager?.GetFocusedElement( ) is not TextBox
+                && _currentBrowser.PasteFilesCommand.CanExecute( null ) )
+            {
+                _ = _currentBrowser.PasteFilesCommand.ExecuteAsync( null );
+                e.Handled = true;
+                return;
+            }
+
             // Ctrl+F / Ctrl+K: jump to search
             if( e.KeyModifiers == KeyModifiers.Control && e.Key is Key.F or Key.K )
             {
@@ -418,6 +429,10 @@ namespace DeerCrypt.Views
             object? sender,
             System.ComponentModel.PropertyChangedEventArgs args )
         {
+            // Put the cursor in the password box as soon as the lock screen shows
+            if( args.PropertyName == nameof( MainViewModel.IsLockScreen ) && DataContext is MainViewModel { IsLockScreen: true } )
+                Dispatcher.UIThread.Post( ( ) => this.FindControl<TextBox>( "UnlockPasswordBox" )?.Focus( ), DispatcherPriority.Loaded );
+
             if( args.PropertyName != nameof( MainViewModel.VaultBrowser ) ) return;
             if( DataContext is not MainViewModel vm ) return;
 
@@ -443,6 +458,7 @@ namespace DeerCrypt.Views
                 // FocusRenameBox must be re-assigned for each new VM instance.
                 var list = this.FindControl<ListBox>( "FileList" );
                 if( list != null ) SetFocusRenameBoxDelegate( list );
+                _currentBrowser.ReadClipboardFiles = ( ) => ClipboardFiles.ReadAsync( Clipboard );
             }
             else
             {

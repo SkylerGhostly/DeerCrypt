@@ -34,6 +34,10 @@ namespace DeerCrypt.ViewModels
         public bool ShowStatusBar => IsBrowserActive || Activities.ShowStrip;
         public bool HasDocuments    => Documents.Count > 0;
 
+        /// <summary>Audio or video is playing in some tab or window.</summary>
+        public bool IsMediaPlaying =>
+            Documents.Concat( _popouts.Keys ).OfType<MediaDocumentViewModel>( ).Any( m => m.Session?.IsPlaying == true );
+
         /// <summary>Any open document (tab or window) with unsaved edits.</summary>
         public bool HasUnsavedDocuments => Documents.Concat( _popouts.Keys ).Any( d => d.IsDirty );
 
@@ -50,6 +54,7 @@ namespace DeerCrypt.ViewModels
             MoveCommand.NotifyCanExecuteChanged( );
             OpenCommand.NotifyCanExecuteChanged( );
             OpenInNewWindowCommand.NotifyCanExecuteChanged( );
+            PasteFilesCommand.NotifyCanExecuteChanged( );
         }
 
         [RelayCommand]

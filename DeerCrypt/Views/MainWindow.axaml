@@ -303,7 +303,65 @@
                Background="{DynamicResource AppBackgroundBrush}"
                DragDrop.AllowDrop="True">
 
-            <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+            <!-- Lock screen: the vault that was just locked (by hand or after inactivity) -->
+            <Panel IsVisible="{Binding IsLockScreen}">
+                <Border Classes="card" Width="400" Padding="28,30,28,24"
+                        HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <StackPanel Spacing="14">
+                        <Border Width="60" Height="60" CornerRadius="16" HorizontalAlignment="Center"
+                                Background="{DynamicResource SelectedBrush}">
+                            <ic:SymbolIcon Symbol="LockClosed" FontSize="30" Foreground="{DynamicResource AccentBrush}" />
+                        </Border>
+                        <StackPanel Spacing="2" HorizontalAlignment="Center">
+                            <TextBlock Text="{Binding LockedVaultName}" FontSize="20" FontWeight="SemiBold"
+                                       HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding LockMessage}" Classes="secondary" HorizontalAlignment="Center" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="6" Margin="0,6,0,0">
+                            <TextBox x:Name="UnlockPasswordBox"
+                                     Watermark="Password"
+                                     PasswordChar="●"
+                                     RevealPassword="{Binding ShowUnlockPassword}"
+                                     Text="{Binding UnlockPassword}">
+                                <TextBox.KeyBindings>
+                                    <KeyBinding Gesture="Enter" Command="{Binding UnlockCommand}" />
+                                </TextBox.KeyBindings>
+                                <TextBox.InnerLeftContent>
+                                    <ic:SymbolIcon Symbol="Key" Margin="10,0,0,0" Foreground="{DynamicResource TextMutedBrush}" />
+                                </TextBox.InnerLeftContent>
+                                <TextBox.InnerRightContent>
+                                    <ToggleButton Classes="ghost" Padding="6,4" Margin="0,0,4,0"
+                                                  IsChecked="{Binding ShowUnlockPassword}" ToolTip.Tip="Show or hide the password">
+                                        <ic:SymbolIcon Symbol="Eye" FontSize="15" />
+                                    </ToggleButton>
+                                </TextBox.InnerRightContent>
+                            </TextBox>
+                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="2,0,0,0"
+                                        IsVisible="{Binding #UnlockPasswordBox.(views:CapsLock.IsOn)}">
+                                <ic:SymbolIcon Symbol="Warning" FontSize="14" Foreground="{DynamicResource WarningBrush}" />
+                                <TextBlock Text="Caps Lock is on" FontSize="12" Foreground="{DynamicResource WarningBrush}" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding UnlockError}" Foreground="{DynamicResource DangerBrush}" FontSize="12"
+                                       TextWrapping="Wrap" Margin="2,0,0,0"
+                                       IsVisible="{Binding UnlockError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
+
+                        <Button Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                Padding="12,8" Command="{Binding UnlockCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <ic:SymbolIcon Symbol="LockOpen" />
+                                <TextBlock Text="Unlock" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="ghost" HorizontalAlignment="Center" Command="{Binding LeaveLockScreenCommand}">
+                            <TextBlock Text="Open a different vault" Classes="secondary" />
+                        </Button>
+                    </StackPanel>
+                </Border>
+            </Panel>
+
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding !IsLockScreen}">
                 <StackPanel HorizontalAlignment="Center"
                             VerticalAlignment="Center"
                             Width="460"
@@ -834,6 +892,10 @@
                                             <MenuItem Header="Folder…" Command="{Binding AddFolderCommand}">
                                                 <MenuItem.Icon><ic:SymbolIcon Symbol="FolderAdd" /></MenuItem.Icon>
                                             </MenuItem>
+                                            <MenuItem Header="Paste copied files" Command="{Binding PasteFilesCommand}" InputGesture="Ctrl+V"
+                                                      ToolTip.Tip="Adds files or folders you copied in your file manager">
+                                                <MenuItem.Icon><ic:SymbolIcon Symbol="ClipboardPaste" /></MenuItem.Icon>
+                                            </MenuItem>
                                         </MenuFlyout>
                                     </Button.Flyout>
                                 </Button>
@@ -918,6 +980,9 @@
                                     </MenuItem>
                                     <MenuItem Header="Add files…" Command="{Binding AddFilesCommand}" InputGesture="Ctrl+O">
                                         <MenuItem.Icon><ic:SymbolIcon Symbol="DocumentAdd" /></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Paste copied files" Command="{Binding PasteFilesCommand}" InputGesture="Ctrl+V">
+                                        <MenuItem.Icon><ic:SymbolIcon Symbol="ClipboardPaste" /></MenuItem.Icon>
                                     </MenuItem>
                                 </ContextMenu>
                             </ListBox.ContextMenu>

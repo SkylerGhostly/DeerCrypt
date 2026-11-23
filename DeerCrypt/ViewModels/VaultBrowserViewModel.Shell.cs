@@ -75,7 +75,35 @@ namespace DeerCrypt.ViewModels
         [NotifyCanExecuteChangedFor( nameof( AddFolderCommand ) )]
         [NotifyCanExecuteChangedFor( nameof( NewFolderCommand ) )]
         [NotifyCanExecuteChangedFor( nameof( NavigateUpCommand ) )]
+        [NotifyCanExecuteChangedFor( nameof( PasteFilesCommand ) )]
         public partial SidebarKind? ActiveSmartView { get; set; }
+
+        // Paste files copied in a file manager (Ctrl+V)
+
+        /// <summary>Set by the window: reads files and folders copied to the clipboard.</summary>
+        public System.Func<Task<(List<string> Files, List<string> Folders)>>? ReadClipboardFiles { get; set; }
+
+        private bool CanPasteFiles => IsBrowserActive && IsFolderView;
+
+        /// <summary>Adds files and folders copied in a file manager to the folder on screen (like dropping them).</summary>
+        [RelayCommand( CanExecute = nameof( CanPasteFiles ) )]
+        private async Task PasteFilesAsync( )
+        {
+            if( ReadClipboardFiles == null ) return;
+            if( IsSearchActive )
+            {
+                StatusMessage = "Clear the search to paste into a folder.";
+                return;
+            }
+
+            var (files, folders) = await ReadClipboardFiles( );
+            if( files.Count + folders.Count == 0 )
+            {
+                StatusMessage = "Nothing to paste. Copy files or folders in your file manager first.";
+                return;
+            }
+            await HandleDropAsync( files, folders, CurrentDirectoryId );
+        }
 
         public bool IsFolderView => ActiveSmartView == null;
 

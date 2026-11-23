@@ -104,6 +104,36 @@
                 </Border>
             </StackPanel>
 
+            <!-- ═══ Security ═══ -->
+            <StackPanel>
+                <StackPanel Classes="section-head">
+                    <ic:SymbolIcon Symbol="LockClosed" />
+                    <TextBlock Text="Security" />
+                </StackPanel>
+                <Border Classes="card">
+                    <Grid Classes="setting" ColumnDefinitions="*,Auto">
+                        <StackPanel>
+                            <TextBlock Classes="setting-title" Text="Lock automatically" />
+                            <TextBlock Classes="setting-help"
+                                       Text="After this long without keyboard or mouse use in DeerCrypt. It waits while files are being added, edits are unsaved, files are open in other apps, media is playing, or a dialog is open." />
+                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,0,0">
+                                <TextBlock Classes="setting-help" VerticalAlignment="Center" Text="Lock now any time:" />
+                                <Border Classes="keycap"><TextBlock Text="Ctrl+L" FontSize="11" /></Border>
+                            </StackPanel>
+                        </StackPanel>
+                        <ComboBox Grid.Column="1" Classes="setting" SelectedIndex="{Binding AutoLockIndex}">
+                            <ComboBoxItem Content="Never" />
+                            <ComboBoxItem Content="After 1 minute" />
+                            <ComboBoxItem Content="After 5 minutes" />
+                            <ComboBoxItem Content="After 10 minutes" />
+                            <ComboBoxItem Content="After 15 minutes" />
+                            <ComboBoxItem Content="After 30 minutes" />
+                            <ComboBoxItem Content="After 1 hour" />
+                        </ComboBox>
+                    </Grid>
+                </Border>
+            </StackPanel>
+
             <!-- ═══ Files ═══ -->
             <StackPanel>
                 <StackPanel Classes="section-head">

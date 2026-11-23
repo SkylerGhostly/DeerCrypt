@@ -39,6 +39,7 @@ namespace DeerCrypt.ViewModels.Viewers
             ThemeIndex            = s.Theme switch { "Dark" => 1, "Light" => 2, _ => 0 };
             DensityIndex          = s.Density == "Compact" ? 1 : 0;
             ViewerPlacementIndex  = s.OpenViewersIn == "Windows" ? 1 : 0;
+            AutoLockIndex         = Math.Max( 0, Array.IndexOf( AutoLockMinutes, s.AutoLockMinutes ) );
             DefaultThumbnailIndex = Math.Max( 0, Array.IndexOf( ModeValues, s.DefaultThumbnails ) );
             VaultThumbnailIndex   = browser.VaultThumbnailSetting is { } v ? Array.IndexOf( ModeValues, v ) + 1 : 0;
             CacheLimitIndex       = Math.Max( 0, Array.IndexOf( CacheLimitsMb, browser.ThumbnailCacheLimitBytes / ( 1024 * 1024 ) ) );
@@ -73,6 +74,20 @@ namespace DeerCrypt.ViewModels.Viewers
             App.SettingsService.Settings.Density = density;
             App.SettingsService.Save( );
             ThemeService.ApplyDensity( density );
+        }
+
+        // Security (app-wide)
+
+        private static readonly int [ ] AutoLockMinutes = [ 0, 1, 5, 10, 15, 30, 60 ];
+
+        /// <summary>Index into Never / 1 / 5 / 10 / 15 / 30 / 60 minutes.</summary>
+        [ObservableProperty] public partial int AutoLockIndex { get; set; }
+
+        partial void OnAutoLockIndexChanged( int value )
+        {
+            if( _loading ) return;
+            App.SettingsService.Settings.AutoLockMinutes = AutoLockMinutes [ Math.Clamp( value, 0, AutoLockMinutes.Length - 1 ) ];
+            App.SettingsService.Save( );
         }
 
         // Opening files (app-wide)

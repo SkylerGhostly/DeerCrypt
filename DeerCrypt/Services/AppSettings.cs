@@ -19,6 +19,13 @@
         /// </summary>
         public string OpenViewersIn { get; set; } = "Tabs";
 
+        /// <summary>
+        /// Lock the open vault after this many minutes without any input in DeerCrypt (0 = never).
+        /// It waits while something would be lost or interrupted (background tasks, unsaved
+        /// edits, files open in other apps, media playing, an open dialog).
+        /// </summary>
+        public int AutoLockMinutes { get; set; } = 15;
+
         /// <summary>"System", "Dark", or "Light".</summary>
         public string Theme { get; set; } = "System";
 
